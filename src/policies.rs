@@ -9,7 +9,7 @@ use std::marker::PhantomData;
 use std::boxed::Box;
 use std::mem::transmute;
 
-const MAX_POLICIES: usize = 10;
+const MAX_POLICIES: usize = 3;
 
 #[repr(u64)]
 #[derive(Copy, Clone)]
@@ -37,19 +37,44 @@ impl Policy {
         num_errors
     }
 
-    fn enforce_redundancy(&self, block: &mut AllocBlock, index: usize) {
+    fn enforce_redundancy(&self, block: &mut AllocBlock, index: usize) -> u32 {
+        let mut errors = 0;
         let mut vec = Vec::new();
         match self {
             Policy::Redundancy(num_copies) => {
-                for i in 0..*num_copies {
-                    let index = usize::try_from(i).unwrap();
-                    unsafe { vec.push(*block.ptr.add((index * block.length + index) as usize)) }
+                // Load bits
+                for copy in 0..*num_copies {
+                    let copy_idx = usize::try_from(copy).unwrap();
+                    unsafe { vec.push(*block.ptr.add((copy_idx * block.length + index) as usize)) }
                 }
+                // Count bits
+                let mut corrected = 0;
+                for bit in 0..8 {
+                    let mask = 1 << bit;
+                    let mut count: [u32; 2] = [0, 0];
 
-                
+                    for copy in vec.iter() {
+                        count[((copy & mask) >> bit) as usize] += 1;
+                    }
+
+                    if count[0] < count[1] {
+                        corrected |= 1 << bit;
+                        errors += count[0];
+                    } else {
+                        errors += count[1];
+                    }
+                }
+                // Correct everything
+                for copy in 0..*num_copies {
+                    let copy_idx = usize::try_from(copy).unwrap();
+                    unsafe {
+                        *block.ptr.add((copy_idx * block.length + index) as usize) = corrected;
+                    }
+                }
             }
             _ => panic!("Tried to enforce redundancy on a non-redundant policy"),
         }
+        errors
     }
 }
 
@@ -58,7 +83,6 @@ struct AllocBlock {
     policies: [Policy; MAX_POLICIES],
     length: usize,
     ptr: *mut u8,
-    _phantom: PhantomData<[u8]>,
 }
 
 impl Drop for AllocBlock {
@@ -81,7 +105,7 @@ impl Drop for AllocBlock {
 
 // #[cfg(light_weight)]
 impl AllocBlock {
-    fn as_ptr(&mut self) -> *mut c_void {
+    fn as_ptr(&self) -> *mut c_void {
         self.ptr as *mut c_void
     }
 
@@ -94,7 +118,7 @@ impl AllocBlock {
                     AllocBlock::size_of(self.length, &self.policies),
                 )
             };
-            num_errors += i.enforce_policy(slice);
+            // num_errors += i.enforce_policy(slice);
         }
         num_errors
     }
@@ -112,7 +136,7 @@ impl AllocBlock {
         full_size
     }
 
-    fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES], align: usize) -> &'a mut AllocBlock {
+    fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
@@ -130,11 +154,17 @@ impl AllocBlock {
                 // TODO: Initialize block here
                 block.length = size;
                 block.policies = *policies;
-                block._phantom = PhantomData;
                 block.ptr = unsafe { block_ptr.add(std::mem::size_of::<AllocBlock>()) };
                 block
             }
             Err(_e) => panic!("Invalid layout arguments"),
+        }
+    }
+
+    fn as_slice(&mut self) -> &mut [u8] {
+        let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
+        unsafe {
+            std::slice::from_raw_parts_mut(self.ptr, full_size)
         }
     }
 }
@@ -143,4 +173,33 @@ impl AllocBlock {
 mod tests {
     use super::*;
 
+    #[test]
+    fn redundancy_check() {
+        let r_policy = Policy::Redundancy(3);
+
+        let block: &mut AllocBlock = AllocBlock::new(
+            1,
+            &[r_policy, Policy::Nil, Policy::Nil]
+        );
+
+        // Create errors
+        // unsafe {
+        //     *block.ptr.add(0) = 0b1111;
+        //     *block.ptr.add(1) = 0b1010;
+        //     *block.ptr.add(2) = 0b0000;
+        // }
+        let slice = block.as_slice();
+
+        slice[0] = 0b1111;
+        slice[1] = 0b1010;
+        slice[2] = 0b0000;
+
+        assert_eq!(r_policy.enforce_redundancy(block, 0), 4);
+
+        for idx in 0..3 {
+            unsafe {
+                assert_eq!(*block.ptr.add(idx), 0b1010 as u8);
+            }
+        }
+    }
 }
