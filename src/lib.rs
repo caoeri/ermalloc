@@ -1,4 +1,6 @@
-//mod policies;
+#![allow(dead_code)]
+
+mod policies;
 mod ffi;
 
 #[cfg(test)]
