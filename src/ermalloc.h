@@ -1,5 +1,7 @@
 #include <stdlib.h>
 
+#define MAX_POLICIES (3)
+
 enum ermalloc_policy {
     Nil = 0,
     Redundancy
