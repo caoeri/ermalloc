@@ -1,0 +1,4 @@
+
+#[repr(C)]
+enum Er
+

@@ -2,15 +2,15 @@
 
 #define MAX_POLICIES (3)
 
-enum ermalloc_policy {
+enum er_policy {
     Nil = 0,
     Redundancy
 };
 
-struct ermalloc_policy_list {
-    enum ermalloc_policy policy;
+struct er_policy_list {
+    enum er_policy policy;
     void* policy_data;
-    struct ermalloc_policy_list* next_policy;
+    struct er_policy_list* next_policy;
 };
 
 // The following functions behave the same as the original, no policies
@@ -25,7 +25,7 @@ void* reallocarray(void* ptr, size_t nmemb, size_t size);
  *
  * @param policies policies for the region, NULL for no policies
  */
-void* er_malloc(size_t size, struct ermalloc_policy_list* policies);
+void* er_malloc(size_t size, struct er_policy_list* policies);
 
 /**
  * Same as free
@@ -37,7 +37,7 @@ void  er_free(void* ptr);
  *
  * @param policies policies for the region, NULL for no policies
  */
-void* er_calloc(size_t nmemb, size_t size, struct ermalloc_policy_list* policies);
+void* er_calloc(size_t nmemb, size_t size, struct er_policy_list* policies);
 
 /**
  * Reallocate and resize a block of memory
@@ -45,7 +45,7 @@ void* er_calloc(size_t nmemb, size_t size, struct ermalloc_policy_list* policies
  * @param policies The policies to apply to the newly allocated block
  * Any original policies will be used to maintain data integrity while moving the allocation
  */
-void* er_realloc(void* ptr, size_t size, struct ermalloc_policy_list* policies);
+void* er_realloc(void* ptr, size_t size, struct er_policy_list* policies);
 
 /**
  * Reallocate and resize a block of memory
@@ -53,12 +53,12 @@ void* er_realloc(void* ptr, size_t size, struct ermalloc_policy_list* policies);
  * @param policies The policies to apply to the newly allocated block
  * Any original policies will be used to maintain data integrity while moving the allocation
  */
-void* er_reallocarray(void* ptr, size_t nmemb, size_t size, struct ermalloc_policy_list* policies);
+void* er_reallocarray(void* ptr, size_t nmemb, size_t size, struct er_policy_list* policies);
 
 /**
  * Change policies for an allocated region
  */
-void er_change_policies(void* ptr, struct ermalloc_policy_list* policies);
+void er_change_policies(void* ptr, struct er_policy_list* policies);
 
 /**
  * Use policies to find bit errors and correct them if possible and desired
