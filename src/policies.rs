@@ -110,7 +110,8 @@ impl AllocBlock {
     }
 
     fn enforce_policy(&mut self) -> u32 {
-        let mut num_errors = 0;
+        //let mut num_errors = 0;
+        /*
         for i in self.policies.iter() {
             let slice = unsafe {
                 std::slice::from_raw_parts_mut(
@@ -120,7 +121,11 @@ impl AllocBlock {
             };
             // num_errors += i.enforce_policy(slice);
         }
-        num_errors
+        */
+        let pol = self.policies.clone();
+        // can't pass &mut self to enforce_policy while also iterating over original policy array
+        pol.iter().fold(0, |acc, i| acc + i.enforce_policy(self))
+        //num_errors
     }
 
     fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
