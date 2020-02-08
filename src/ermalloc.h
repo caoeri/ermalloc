@@ -7,6 +7,12 @@ enum ermalloc_policy {
     Redundancy
 };
 
+struct ermalloc_policy_list {
+    enum ermalloc_policy policy;
+    void* policy_data;
+    struct ermalloc_policy_list* next_policy;
+}
+
 void* malloc(size_t size);
 void  free(void* ptr);
 void* calloc(size_t nmemb, size_t size);
