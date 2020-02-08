@@ -60,4 +60,12 @@ void* erreallocarray(void* ptr, size_t nmemb, size_t size, struct ermalloc_polic
  */
 void er_change_policies(void* ptr, struct ermalloc_policy_list* policies);
 
+/**
+ * Use policies to find bit errors and correct them if possible
+ *
+ * @return = 0 if no errors
+ *         < 0 if unrecoverable errors, as defined by the associated policies
+ *         > 0 number of errors found/corrected, as defined by the associated policies
+ */
+int er_enforce_policies(void* ptr);
 
