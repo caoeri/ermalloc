@@ -10,7 +10,7 @@ enum er_policy {
 struct er_policy_list {
     enum er_policy policy;
     const void* policy_data;
-    struct er_policy_list* next_policy;
+    const struct er_policy_list* next_policy;
 };
 
 // The following functions behave the same as the original, no policies
