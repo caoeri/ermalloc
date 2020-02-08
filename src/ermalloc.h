@@ -55,3 +55,9 @@ void* errealloc(void* ptr, size_t size, struct ermalloc_policy_list* policies);
  */
 void* erreallocarray(void* ptr, size_t nmemb, size_t size, struct ermalloc_policy_list* policies);
 
+/**
+ * Change policies for an allocated region
+ */
+void er_change_policies(void* ptr, struct ermalloc_policy_list* policies);
+
+
