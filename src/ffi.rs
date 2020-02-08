@@ -1,6 +1,9 @@
 use libc::*;
 
 use std::ptr;
+use std::convert::TryFrom;
+use std::error::Error;
+use std::fmt;
 
 use crate::policies::Policy;
 
@@ -10,6 +13,21 @@ pub enum ErPolicyRaw {
     Nil,
     Redundancy,
 }
+
+#[derive(Debug)]
+enum FfiError {
+    PolicyValueUnknown,
+    PolicyDataWasNull,
+    MoreThanMaxPolicies,
+}
+
+impl fmt::Display for FfiError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for FfiError {}
 
 #[repr(C)]
 pub struct ErPolicyListRaw {
@@ -36,6 +54,23 @@ impl From<ErPolicyListNonNull> for Policy {
             }
             Policy::Redundancy(num)
         },
+        }
+    }
+}
+
+impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
+    type Error = FfiError;
+
+    fn try_from(raw: ErPolicyListRaw) -> Result<Self, Self::Error> {
+        match raw.policy {
+            ErPolicyRaw::Redundancy => {
+                if raw.policy_data.is_null() {
+                    Err(FfiError::PolicyDataWasNull)
+                } else {
+                    
+                }
+            }
+            _
         }
     }
 }
