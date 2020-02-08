@@ -75,13 +75,26 @@ int er_enforce_policies(void* ptr);
  * the policy enforcement may act on the
  * entire allocated block, rather than just the desired region
  *
- * @param ptr Pointer to start of allocation
+ * @param base Pointer to start of allocation
  * @param dest Pointer to destination buffer
- * @param offset Bytes after ptr to start reading from
+ * @param offset Bytes after base to start reading from
  * @param len Number of bytes to read
  * @return = 0 if no errors
  *         < 0 if unrecoverable errors, as defined by the associated policies
  *         > 0 number of errors found/corrected, as defined by the associated policies
  */
-int er_read_buf(void* ptr, void* dest, size_t offset, size_t len);
+int er_read_buf(void* base, void* dest, size_t offset, size_t len);
+
+/**
+ * Write the data and then enforce the policy on new data
+ *
+ * @param base Pointer to start of allocation
+ * @param src  Pointer to source of data
+ * @param offset Bytes after base to start writing to
+ * @param len Number of bytes to write
+ * @return = 0 if no errors
+ *         < 0 if unrecoverable errors, as defined by the associated policies
+ *         > 0 number of errors found/corrected, as defined by the associated policies
+ */
+int er_write_buf(void* base, void* src, size_t offset, size_t len);
 
