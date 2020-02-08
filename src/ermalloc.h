@@ -9,7 +9,7 @@ enum er_policy {
 
 struct er_policy_list {
     enum er_policy policy;
-    void* policy_data;
+    const void* policy_data;
     struct er_policy_list* next_policy;
 };
 
@@ -25,7 +25,7 @@ void* reallocarray(void* ptr, size_t nmemb, size_t size);
  *
  * @param policies policies for the region, NULL for no policies
  */
-void* er_malloc(size_t size, struct er_policy_list* policies);
+void* er_malloc(size_t size, const struct er_policy_list* policies);
 
 /**
  * Same as free
@@ -37,7 +37,7 @@ void  er_free(void* ptr);
  *
  * @param policies policies for the region, NULL for no policies
  */
-void* er_calloc(size_t nmemb, size_t size, struct er_policy_list* policies);
+void* er_calloc(size_t nmemb, size_t size, const struct er_policy_list* policies);
 
 /**
  * Reallocate and resize a block of memory
@@ -45,7 +45,7 @@ void* er_calloc(size_t nmemb, size_t size, struct er_policy_list* policies);
  * @param policies The policies to apply to the newly allocated block
  * Any original policies will be used to maintain data integrity while moving the allocation
  */
-void* er_realloc(void* ptr, size_t size, struct er_policy_list* policies);
+void* er_realloc(void* ptr, size_t size, const struct er_policy_list* policies);
 
 /**
  * Reallocate and resize a block of memory
@@ -53,12 +53,12 @@ void* er_realloc(void* ptr, size_t size, struct er_policy_list* policies);
  * @param policies The policies to apply to the newly allocated block
  * Any original policies will be used to maintain data integrity while moving the allocation
  */
-void* er_reallocarray(void* ptr, size_t nmemb, size_t size, struct er_policy_list* policies);
+void* er_reallocarray(void* ptr, size_t nmemb, size_t size, const struct er_policy_list* policies);
 
 /**
  * Change policies for an allocated region
  */
-void er_change_policies(void* ptr, struct er_policy_list* policies);
+void er_change_policies(void* ptr, const struct er_policy_list* policies);
 
 /**
  * Use policies to find bit errors and correct them if possible and desired
@@ -96,5 +96,5 @@ int er_read_buf(void* base, void* dest, size_t offset, size_t len);
  *         < 0 if unrecoverable errors, as defined by the associated policies
  *         > 0 number of errors found/corrected, as defined by the associated policies
  */
-int er_write_buf(void* base, void* src, size_t offset, size_t len);
+int er_write_buf(void* base, const void* src, size_t offset, size_t len);
 
