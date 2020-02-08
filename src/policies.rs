@@ -166,10 +166,16 @@ impl AllocBlock {
         }
     }
 
-    fn as_slice(&mut self) -> &mut [u8] {
+    unsafe fn full_slice(&mut self) -> &mut [u8] {
         let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr, full_size)
+        }
+    }
+
+    fn data_slice(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self.ptr, self.length)
         }
     }
 }
@@ -193,7 +199,7 @@ mod tests {
         //     *block.ptr.add(1) = 0b1010;
         //     *block.ptr.add(2) = 0b0000;
         // }
-        let slice = block.as_slice();
+        let slice = unsafe{ block.full_slice() };
 
         slice[0] = 0b1111;
         slice[1] = 0b1010;
