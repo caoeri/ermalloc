@@ -19,3 +19,9 @@ void* calloc(size_t nmemb, size_t size);
 void* realloc(void* ptr, size_t size);
 void* reallocarray(void* ptr, size_t nmemb, size_t size);
 
+void* ermalloc(size_t size, struct ermalloc_policy_list* policies);
+void  erfree(void* ptr, struct ermalloc_policy_list* policies);
+void* ercalloc(size_t nmemb, size_t size, struct ermalloc_policy_list* policies);
+void* errealloc(void* ptr, size_t size, struct ermalloc_policy_list* policies);
+void* erreallocarray(void* ptr, size_t nmemb, size_t size, struct ermalloc_policy_list* policies);
+
