@@ -22,10 +22,11 @@ pub enum Policy {
 
 // TODO:
 // Cleaner API
-// Support Create, Mutate, Delete
+// Support Create, Read, Update, Delete
 // Full alloc, realloc, dealloc
 // Proper warnings for poor allocations
 // Cleaner interface for size propagation upwards
+// Interface: is_corrupted, apply, correct
 
 // TODO:
 // Is corrupted?
@@ -69,21 +70,6 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
 }
 
 impl Policy {
-    /// Enforces the given policy and returns the number of errors found
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - A byte slice that holds the data to enforce the policy on
-    fn enforce_policy(&self, block: &mut AllocBlock) -> u32 {
-        let num_errors = 0;
-        match self {
-            Policy::Redundancy(num_copies) => println!("Num_copies: {}", num_copies),
-            Policy::ReedSolomon(correction_bits) => println!("Reed Solomon {}", correction_bits),
-            // Policy::Custom => println!("Custom"),
-            Policy::Nil => println!("Nil"),
-        }
-        num_errors
-    }
 
     /// From the buffer return (data, ecc)
     fn split_buffer_mut<'a>(&self, buffer: &'a mut [u8]) -> (&'a mut [u8], &'a mut [u8]) {
@@ -128,7 +114,7 @@ impl Policy {
         }
     }
 
-    /// Determines if the slcie si corrupted give the current policy
+    /// Determines if the slice si corrupted give the current policy
     fn is_corrupted(&self, buffer: &[u8]) -> bool {
         let (data, ecc) = self.split_buffer(buffer);
 
@@ -153,7 +139,7 @@ impl Policy {
         }
     }
 
-    // If any errors are present in the buffer, this wlil correct them
+    /// If any errors are present in the buffer, this wlil correct them
     fn correct_buffer(&self, buffer: &mut [u8]) -> u32 {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -170,30 +156,6 @@ impl Policy {
                 n_errors as u32
             }
             _ => 0,
-        }
-    }
-
-    fn apply_policy(&self, block: &mut AllocBlock, index: usize) {
-        match self {
-            Policy::Redundancy(num_copies) => {
-                for copy in 0..*num_copies {
-                    let copy_idx = usize::try_from(copy).unwrap();
-                    unsafe {
-                        *block.ptr().add((copy_idx * block.length + index) as usize) =
-                            *block.ptr().add((0 * block.length + index) as usize);
-                    }
-                }
-            }
-            Policy::ReedSolomon(correction_bits) => {
-                let length = block.length; // TODO: rederive size
-                let enc = Encoder::new(*correction_bits as usize);
-
-                let buffer = enc.encode(block.data_slice());
-                let (data, ecc) = block.data_slice().split_at_mut(length);
-                data.clone_from_slice(buffer.data());
-                ecc.clone_from_slice(buffer.ecc());
-            }
-            _ => panic!("Tried to enforce redundancy on a non-redundant policy"),
         }
     }
 }
@@ -243,25 +205,18 @@ impl AllocBlock {
         self.ptr() as *mut c_void
     }
 
-    fn enforce_policy(&mut self) -> u32 {
-        //let mut num_errors = 0;
-        /*
-        for i in self.policies.iter() {
-            let slice = unsafe {
-                std::slice::from_raw_parts_mut(
-                    self.ptr,
-                    AllocBlock::size_of(self.length, &self.policies),
-                )
-            };
-            // num_errors += i.enforce_policy(slice);
-        }
-        */
+    /// TODO: Convert to tree
+    fn correct_buffer(&mut self) -> u32 {
         let pol = self.policies.clone();
         // can't pass &mut self to enforce_policy while also iterating over original policy array
-        pol.iter().fold(0, |acc, i| acc + i.enforce_policy(self))
-        //num_errors
+        pol.iter().map(|i| i.correct_buffer(unsafe{self.full_slice()})).sum()
     }
 
+    fn is_corrupted(&self) -> bool {
+        panic!("Not Implemented")
+    }
+
+    /// TODO: Convert to tree
     fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
         let mut full_size = desired_size;
         for p in policies {
