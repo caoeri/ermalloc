@@ -14,3 +14,6 @@ cbindgen = "0.12.2"
 
 # General
 lazy_static = "1.4.0"
+
+# Encoding
+reed-solomon = "0.2.1"
