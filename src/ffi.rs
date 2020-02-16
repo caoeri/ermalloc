@@ -87,16 +87,16 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
     type Error = FfiError;
 
     fn try_from(raw: ErPolicyListRaw) -> Result<Self, Self::Error> {
+        let next;
+        if raw.er_list_policy_raw.is_null() {
+            next = None;
+        } else {
+            unsafe {
+                next = Some(ptr::NonNull::new_unchecked(raw.er_list_policy_raw as *mut _));
+            }
+        }
         match raw.policy {
             ErPolicyRaw::Nil => {
-                let next;
-                if raw.er_list_policy_raw.is_null() {
-                    next = None;
-                } else {
-                    unsafe {
-                        next = Some(ptr::NonNull::new_unchecked(raw.er_list_policy_raw as *mut _));
-                    }
-                }
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
             }
             ErPolicyRaw::Redundancy => {
@@ -106,14 +106,6 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
                     let policy_data = unsafe {
                         Some(ptr::NonNull::new_unchecked(raw.policy_data as *mut _))
                     };
-                    let next;
-                    if raw.er_list_policy_raw.is_null() {
-                        next = None;
-                    } else {
-                        unsafe {
-                            next = Some(ptr::NonNull::new_unchecked(raw.er_list_policy_raw as *mut _));
-                        }
-                    }
                     Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
                 }
             }
