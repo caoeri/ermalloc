@@ -15,3 +15,6 @@ build-ermalloc_c: src/ermalloc.c src/ermalloc.h
 build-c: src/main.c build-ermalloc_c build-rust
 	$(GCC_BIN) -Og -g -Ltarget/debug/ -o build/main src/main.c build/ermalloc_c.o -l:libermalloc.a -pthread -ldl
 
+.PHONY: clean
+clean:
+	rm -rf build/
