@@ -12,14 +12,14 @@ struct er_policy_list {
     const void* policy_data;
     const struct er_policy_list* next_policy;
 };
-
+/*
 // The following functions behave the same as the original, no policies
 void* malloc(size_t size);
 void  free(void* ptr);
 void* calloc(size_t nmemb, size_t size);
 void* realloc(void* ptr, size_t size);
 void* reallocarray(void* ptr, size_t nmemb, size_t size);
-
+*/
 /**
  * Allocate uninitialized memory
  *

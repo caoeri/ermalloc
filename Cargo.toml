@@ -20,4 +20,4 @@ reed-solomon = "0.2.1"
 
 [lib]
 name = "ermalloc"
-crate-type = ["dylib"]
+crate-type = ["staticlib"]

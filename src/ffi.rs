@@ -117,3 +117,24 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
 pub extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     ptr::null::<c_void>() as *mut c_void
 }
+
+#[no_mangle]
+pub extern "C" fn er_free(ptr: *const c_void)  {
+    println!("hi");
+}
+
+#[no_mangle]
+pub extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+    ptr::null::<c_void>() as *mut c_void
+}
+
+#[no_mangle]
+pub extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+    ptr::null::<c_void>() as *mut c_void
+}
+
+#[no_mangle]
+pub extern "C" fn er_reallocarray(ptr: *const c_void, nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+    ptr::null::<c_void>() as *mut c_void
+}
+
