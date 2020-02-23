@@ -1,11 +1,12 @@
-extern crate lazy_static;
-extern crate reed_solomon;
+#![no_std]
 
-use std::alloc::{alloc, dealloc, realloc, Layout};
-use std::convert::TryFrom;
-use std::ffi::c_void;
-use std::iter::Iterator;
-use std::mem::transmute;
+extern crate alloc;
+
+use alloc::alloc::{alloc, dealloc, realloc, Layout};
+use core::convert::TryFrom;
+use core::ffi::c_void;
+use core::iter::Iterator;
+use core::mem::transmute;
 
 use reed_solomon::{Buffer, Decoder, Encoder};
 
@@ -22,11 +23,13 @@ pub enum Policy {
 
 // TODO:
 // Cleaner API
-// Support Create, Read, Update, Delete
-// Full alloc, realloc, dealloc
+// Support Create (Done), Read (By default), Update (By default), Delete (Done)
+// Full alloc (Done), realloc, dealloc (Done)
 // Proper warnings for poor allocations
-// Cleaner interface for size propagation upwards
-// Interface: is_corrupted, apply, correct
+// Cleaner interface for size propagation upwards (All hidden!)
+// Interface: is_corrupted (Done), apply (Done), correct (Done)
+
+// Testing
 
 // TODO:
 // Is corrupted?
@@ -70,7 +73,6 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
 }
 
 impl Policy {
-
     /// From the buffer return (data, ecc)
     fn split_buffer_mut<'a>(&self, buffer: &'a mut [u8]) -> (&'a mut [u8], &'a mut [u8]) {
         let len = buffer.len();
@@ -145,7 +147,9 @@ impl Policy {
             Policy::Redundancy(n_copies) => {
                 let (data, _) = self.split_buffer(buffer);
                 let n_copies = *n_copies as usize;
-                (0..data.len()).map(|index| correct_bits_redundant(buffer, n_copies, index)).sum()
+                (0..data.len())
+                    .map(|index| correct_bits_redundant(buffer, n_copies, index))
+                    .sum()
             }
             Policy::ReedSolomon(correction_bits) => {
                 let dec = Decoder::new(*correction_bits as usize);
@@ -157,6 +161,41 @@ impl Policy {
             }
             _ => 0,
         }
+    }
+
+
+    fn apply_policy(&self, buffer: &mut [u8]) {
+        match self {
+            Policy::Redundancy(n_copies) => {
+                if buffer.len() % (*n_copies as usize) != 0 {
+                    panic!("Redundancy: Size of buffer is not a multiple of the data size");
+                }
+                let data_len = buffer.len() / (*n_copies as usize);
+                let (data, err) = self.split_buffer_mut(buffer);
+                
+                for slice in err.chunks_exact_mut(data_len).skip(1) {
+                    slice.copy_from_slice(data)
+                }
+            }
+            Policy::ReedSolomon(correction_bits) => {
+                let enc = Encoder::new(*correction_bits as usize);
+                let (data, err) = self.split_buffer_mut(buffer);
+                let encoded = enc.encode(data);
+                err.copy_from_slice(encoded.ecc());
+            }
+            _ => (),
+        }
+    }
+
+    /// Unwraps one layer of policy application to get the data
+    fn get_data_mut<'a>(&self, buffer: &'a mut [u8]) -> &'a mut [u8] {
+        let (data, _) = self.split_buffer_mut(buffer);
+        data
+    }
+
+    fn get_data<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
+        let (data, _) = self.split_buffer(buffer);
+        data
     }
 }
 
@@ -173,24 +212,6 @@ struct AllocBlock {
     length: usize,
 }
 
-impl Drop for AllocBlock {
-    fn drop(&mut self) {
-        let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
-        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
-
-        match res {
-            Ok(_val) => {
-                let layout = res.unwrap();
-                unsafe {
-                    let ptr: *mut u8 = transmute(self as *mut AllocBlock);
-                    dealloc(ptr, layout)
-                };
-            }
-            Err(_e) => panic!("Invalid layout arguments"),
-        }
-    }
-}
-
 // #[cfg(light_weight)]
 impl AllocBlock {
     fn ptr(&self) -> *mut u8 {
@@ -205,24 +226,15 @@ impl AllocBlock {
         self.ptr() as *mut c_void
     }
 
-    /// TODO: Convert to tree
-    fn correct_buffer(&mut self) -> u32 {
-        let pol = self.policies.clone();
-        // can't pass &mut self to enforce_policy while also iterating over original policy array
-        pol.iter().map(|i| i.correct_buffer(unsafe{self.full_slice()})).sum()
-    }
-
-    fn is_corrupted(&self) -> bool {
-        panic!("Not Implemented")
-    }
-
-    /// TODO: Convert to tree
     fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
         let mut full_size = desired_size;
-        for p in policies {
+        for p in policies.iter().rev() {
             match p {
                 Policy::Redundancy(num_copies) => {
                     full_size *= usize::try_from(*num_copies).unwrap()
+                }
+                Policy::ReedSolomon(n_ecc) => {
+                    full_size += usize::try_from(*n_ecc).unwrap()
                 }
                 _ => (),
             }
@@ -241,10 +253,11 @@ impl AllocBlock {
                 let block_ptr: *mut u8 = unsafe { alloc(layout) };
                 let block: &'a mut AllocBlock;
 
-                unsafe {
-                    block = std::mem::transmute(block_ptr);
-                }
+                // unsafe {
+                //     block = std::mem::transmute(block_ptr);
+                // }
 
+                block = unsafe { &mut *(block_ptr as *mut AllocBlock) };
                 // TODO: Initialize block here
                 block.full_size = full_size;
                 block.length = size;
@@ -255,12 +268,75 @@ impl AllocBlock {
         }
     }
 
-    unsafe fn full_slice(&mut self) -> &mut [u8] {
+    fn drop(&mut self) {
+        let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
+        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
+
+        match res {
+            Ok(_val) => {
+                let layout = res.unwrap();
+                unsafe {
+                    let ptr: *mut u8 = transmute(self as *mut AllocBlock);
+                    dealloc(ptr, layout)
+                };
+            }
+            Err(_e) => panic!("Invalid layout arguments"),
+        }
+    }
+
+    fn drop_ptr(ptr: *mut u8) {
+        let block = unsafe { &mut *(ptr as *mut AllocBlock) };
+        block.drop()
+    }
+
+    unsafe fn full_slice(&self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
     }
 
-    fn data_slice(&mut self) -> &mut [u8] {
+    fn data_slice(&self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.length) }
+    }
+
+    fn correct_buffer(&mut self) -> u32 {
+        let buffer = unsafe { self.full_slice() };
+        self.correct_bits_helper(0, buffer)
+    }
+
+    fn correct_bits_helper(&self, index: usize, full_buffer: &mut [u8]) -> u32 {
+        let corrected_bits = match index == MAX_POLICIES {
+            true => return 0,
+            false => self.correct_bits_helper(index + 1, self.policies[index].get_data_mut(full_buffer))
+        };
+
+        corrected_bits + self.policies[index].correct_buffer(full_buffer)
+    }
+
+    fn is_corrupted(&self) -> bool {
+        let buffer = unsafe { self.full_slice() };
+        self.is_corrupted_helper(0, buffer)
+    }
+
+    fn is_corrupted_helper(&self, index: usize, full_buffer: &[u8]) -> bool {
+        let corrected_bits = match index == MAX_POLICIES {
+            true => return false,
+            false => self.is_corrupted_helper(index + 1, self.policies[index].get_data(full_buffer))
+        };
+
+        corrected_bits || self.policies[index].is_corrupted(full_buffer)
+    }
+
+    fn apply_policy(&self, buffer: &mut [u8]) {
+        let buffer = unsafe { self.full_slice() };
+        self.apply_policy_helper(0, buffer)
+    }
+
+    fn apply_policy_helper(&self, index: usize, full_buffer: &mut [u8]) {
+        match index == MAX_POLICIES {
+            true => return,
+            false => self.apply_policy_helper(index + 1, self.policies[index].get_data_mut(full_buffer))
+        };
+
+        self.policies[index].apply_policy(full_buffer)
     }
 }
 
