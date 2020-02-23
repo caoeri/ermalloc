@@ -285,7 +285,7 @@ impl AllocBlock {
     }
 
     fn drop_ptr(ptr: *mut u8) {
-        let block = unsafe { &mut *(ptr as *mut AllocBlock) };
+        let block = unsafe { &mut *((ptr as *mut AllocBlock).sub(1)) };
         block.drop()
     }
 
