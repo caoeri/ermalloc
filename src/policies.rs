@@ -272,13 +272,15 @@ impl AllocBlock {
         }
     }
 
-    pub fn realloc<'a>(mut self, size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
+    pub fn realloc<'a>(&self, size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(_val) => {
                 let layout = res.unwrap();
+
+                let old_block = (*self).clone();
 
                 let block_ptr: *mut u8 = unsafe { realloc(self.alloced_region(), layout, size) };
 
@@ -287,8 +289,8 @@ impl AllocBlock {
                 unsafe { block = std::mem::transmute(block_ptr); }
 
                 block.full_size = full_size;
-                block.length = size;
-                block.policies = *policies;
+                block.length    = size;
+                block.policies  = old_block.policies;
                 block
             },
             Err(_e) => panic!("Invalid layout arguments")
