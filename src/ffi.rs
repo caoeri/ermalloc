@@ -162,6 +162,7 @@ pub extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *
 
 #[no_mangle]
 pub extern "C" fn er_free(ptr: *const c_void)  {
+    AllocBlock::free_ptr(ptr as *const u8);
 }
 
 #[no_mangle]

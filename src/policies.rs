@@ -295,6 +295,13 @@ impl AllocBlock {
         }
     }
 
+    pub fn free_ptr(ptr: *const u8) {
+        let block_ref = AllocBlock::get_block(ptr);
+        let res = Layout::from_size_align(block_ref.full_size + std::mem::size_of::<AllocBlock>(), 16).expect("layout failed");
+        let ptr = block_ref.alloced_region();
+        unsafe { dealloc(ptr, res); }
+    }
+
     unsafe fn full_slice(&mut self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
     }
