@@ -162,6 +162,7 @@ impl Policy {
 
 /// Metadata that is adjacent to the actual data stored.
 #[repr(C)]
+#[derive(Clone)]
 pub struct AllocBlock {
     /// Policies to be applied to the data in order from 0 to MAX_POLICIES
     policies: [Policy; MAX_POLICIES],
@@ -198,6 +199,18 @@ impl AllocBlock {
         unsafe {
             let block_ptr: *mut u8 = block_ptr as *mut u8;
             block_ptr.add(std::mem::size_of::<AllocBlock>())
+        }
+    }
+
+    fn alloced_region(&self) -> *mut u8 {
+        self as *const AllocBlock as *mut u8
+    }
+
+    pub fn get_block<'a>(ptr: *const u8) -> &'a AllocBlock {
+        unsafe {
+            (ptr.sub(std::mem::size_of::<AllocBlock>()) as *const AllocBlock)
+                .as_ref()
+                .expect("Null ptr")
         }
     }
 
@@ -256,6 +269,29 @@ impl AllocBlock {
                 block
             }
             Err(_e) => panic!("Invalid layout arguments"),
+        }
+    }
+
+    pub fn realloc<'a>(mut self, size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
+        let full_size: usize = AllocBlock::size_of(size, policies);
+        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
+
+        match res {
+            Ok(_val) => {
+                let layout = res.unwrap();
+
+                let block_ptr: *mut u8 = unsafe { realloc(self.alloced_region(), layout, size) };
+
+                let block: &'a mut AllocBlock;
+
+                unsafe { block = std::mem::transmute(block_ptr); }
+
+                block.full_size = full_size;
+                block.length = size;
+                block.policies = *policies;
+                block
+            },
+            Err(_e) => panic!("Invalid layout arguments")
         }
     }
 

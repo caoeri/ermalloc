@@ -191,7 +191,23 @@ pub extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPoli
 
 #[no_mangle]
 pub extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    ptr::null::<c_void>() as *mut c_void
+    let block_ref = (*AllocBlock::get_block(ptr as *const u8)).clone();
+    let mut policy_arr = [Policy::Nil; MAX_POLICIES];
+    if policies != ptr::null() {
+        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        for i in 0.. {
+            if i >= MAX_POLICIES {
+                eprintln!("{}", FfiError::MoreThanMaxPolicies);
+                return ptr::null::<c_void>()as *mut c_void;
+            }
+            policy_arr[i] = Policy::from(head);
+            head = match head.next() {
+                None => break,
+                Some(erplnn) => erplnn
+            };
+        }
+    }
+    AllocBlock::realloc(block_ref, size, &policy_arr).as_ptr()
 }
 
 #[no_mangle]
