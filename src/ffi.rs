@@ -54,8 +54,12 @@ impl ErPolicyListNonNull {
     fn new(policy: ErPolicyRaw, policy_data: Option<ptr::NonNull<c_void>>, er_list_policy: Option<ptr::NonNull<ErPolicyListRaw>>) -> Self {
         ErPolicyListNonNull { policy, policy_data, er_list_policy }
     }
+}
 
-    fn next(&self) -> Option<Self> {
+impl Iterator for ErPolicyListNonNull {
+    type Item = Self;
+
+    fn next(&mut self) -> Option<Self::Item> {
         match self.er_list_policy {
             None => None,
             Some(ptr) => {
@@ -63,6 +67,13 @@ impl ErPolicyListNonNull {
                     ErPolicyListNonNull::try_from(*ptr.as_ptr()).ok()
                 }
             }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self.er_list_policy {
+            None => (0, None),
+            Some(_) => (1, None)
         }
     }
 }
