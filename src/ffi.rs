@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::error::Error;
 use std::fmt;
 
-use crate::policies::Policy;
+use crate::policies::*;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -43,6 +43,12 @@ impl ErPolicyListRaw {
     }
 }
 
+impl Default for ErPolicyListRaw {
+    fn default() -> Self {
+        ErPolicyListRaw::new(ErPolicyRaw::Nil, ptr::null(), ptr::null())
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 pub struct ErPolicyListNonNull {
     policy: ErPolicyRaw,
@@ -53,6 +59,12 @@ pub struct ErPolicyListNonNull {
 impl ErPolicyListNonNull {
     fn new(policy: ErPolicyRaw, policy_data: Option<ptr::NonNull<c_void>>, er_list_policy: Option<ptr::NonNull<ErPolicyListRaw>>) -> Self {
         ErPolicyListNonNull { policy, policy_data, er_list_policy }
+    }
+}
+
+impl Default for ErPolicyListNonNull {
+    fn default() -> Self {
+        ErPolicyListNonNull::new(ErPolicyRaw::Nil, None, None)
     }
 }
 
@@ -126,7 +138,24 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
 
 #[no_mangle]
 pub extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    ptr::null::<c_void>() as *mut c_void
+    if size == 0 {
+        return ptr::null::<c_void>() as *mut c_void;
+    }
+
+    let mut policy_arr = [Policy::Nil; MAX_POLICIES];
+    let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+    for i in 0.. {
+        if i >= MAX_POLICIES {
+            eprintln!("{}", FfiError::MoreThanMaxPolicies);
+            return ptr::null::<c_void>()as *mut c_void;
+        }
+        policy_arr[i] = Policy::from(head);
+        head = match head.next() {
+            None => break,
+            Some(erplnn) => erplnn
+        };
+    }
+    AllocBlock::new(size, &policy_arr).as_ptr()
 }
 
 #[no_mangle]

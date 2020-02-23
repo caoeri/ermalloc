@@ -9,7 +9,7 @@ use std::mem::transmute;
 
 use reed_solomon::{Buffer, Decoder, Encoder};
 
-const MAX_POLICIES: usize = 3;
+pub const MAX_POLICIES: usize = 3;
 
 #[repr(u64)]
 #[derive(Copy, Clone)]
@@ -162,7 +162,7 @@ impl Policy {
 
 /// Metadata that is adjacent to the actual data stored.
 #[repr(C)]
-struct AllocBlock {
+pub struct AllocBlock {
     /// Policies to be applied to the data in order from 0 to MAX_POLICIES
     policies: [Policy; MAX_POLICIES],
 
@@ -201,7 +201,7 @@ impl AllocBlock {
         }
     }
 
-    fn as_ptr(&self) -> *mut c_void {
+    pub fn as_ptr(&self) -> *mut c_void {
         self.ptr() as *mut c_void
     }
 
@@ -230,7 +230,7 @@ impl AllocBlock {
         full_size
     }
 
-    fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
+    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
