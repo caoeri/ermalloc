@@ -1,7 +1,7 @@
 extern crate lazy_static;
 extern crate reed_solomon;
 
-use std::alloc::{alloc, dealloc, realloc, Layout};
+use std::alloc::{alloc, alloc_zeroed, dealloc, realloc, Layout};
 use std::convert::TryFrom;
 use std::ffi::c_void;
 use std::iter::Iterator;
@@ -172,7 +172,7 @@ pub struct AllocBlock {
     // The amount of the data allocated
     length: usize,
 }
-
+/*
 impl Drop for AllocBlock {
     fn drop(&mut self) {
         let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
@@ -190,7 +190,7 @@ impl Drop for AllocBlock {
         }
     }
 }
-
+*/
 // #[cfg(light_weight)]
 impl AllocBlock {
     fn ptr(&self) -> *mut u8 {
@@ -230,7 +230,7 @@ impl AllocBlock {
         full_size
     }
 
-    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
+    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES], zeroed: bool) -> &'a mut AllocBlock {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
@@ -238,7 +238,11 @@ impl AllocBlock {
             Ok(_val) => {
                 let layout = res.unwrap();
 
-                let block_ptr: *mut u8 = unsafe { alloc(layout) };
+                let block_ptr: *mut u8 = if zeroed {
+                    unsafe { alloc_zeroed(layout) }
+                } else  {
+                    unsafe { alloc(layout) }
+                };
                 let block: &'a mut AllocBlock;
 
                 unsafe {

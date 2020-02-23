@@ -143,29 +143,50 @@ pub extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *
     }
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
-    let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
-    for i in 0.. {
-        if i >= MAX_POLICIES {
-            eprintln!("{}", FfiError::MoreThanMaxPolicies);
-            return ptr::null::<c_void>()as *mut c_void;
+    if policies != ptr::null() {
+        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        for i in 0.. {
+            if i >= MAX_POLICIES {
+                eprintln!("{}", FfiError::MoreThanMaxPolicies);
+                return ptr::null::<c_void>()as *mut c_void;
+            }
+            policy_arr[i] = Policy::from(head);
+            head = match head.next() {
+                None => break,
+                Some(erplnn) => erplnn
+            };
         }
-        policy_arr[i] = Policy::from(head);
-        head = match head.next() {
-            None => break,
-            Some(erplnn) => erplnn
-        };
     }
-    AllocBlock::new(size, &policy_arr).as_ptr()
+    AllocBlock::new(size, &policy_arr, false).as_ptr()
 }
 
 #[no_mangle]
 pub extern "C" fn er_free(ptr: *const c_void)  {
-    println!("hi");
 }
 
 #[no_mangle]
 pub extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    ptr::null::<c_void>() as *mut c_void
+    let bytes: size_t = nmemb * size;
+    if size == 0 {
+        return ptr::null::<c_void>() as *mut c_void;
+    }
+
+    let mut policy_arr = [Policy::Nil; MAX_POLICIES];
+    if policies != ptr::null() {
+        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        for i in 0.. {
+            if i >= MAX_POLICIES {
+                eprintln!("{}", FfiError::MoreThanMaxPolicies);
+                return ptr::null::<c_void>()as *mut c_void;
+            }
+            policy_arr[i] = Policy::from(head);
+            head = match head.next() {
+                None => break,
+                Some(erplnn) => erplnn
+            };
+        }
+    }
+    AllocBlock::new(bytes, &policy_arr, true).as_ptr()
 }
 
 #[no_mangle]

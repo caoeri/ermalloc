@@ -5,7 +5,8 @@
 
 int main(void)
 {
-    er_free(NULL);
-    printf("hey\n");
+    int* x = er_malloc(123, NULL);
+    x[12] = 7;
+    er_free(x);
     return 0;
 }
