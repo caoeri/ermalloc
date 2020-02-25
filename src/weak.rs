@@ -12,6 +12,12 @@ impl<'a, T> From<&'a T> for Weak<'a, T> {
     }
 }
 
+impl<'a, T> Default for Weak<'a, T> {
+    fn default() -> Self {
+        Weak { weak: None }
+    }
+}
+
 impl<'a, T> Weak<'a, T> {
     
 }
