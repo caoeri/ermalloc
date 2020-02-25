@@ -19,5 +19,7 @@ impl<'a, T> Default for Weak<'a, T> {
 }
 
 impl<'a, T> Weak<'a, T> {
-    
+    pub unsafe fn from_ptr(ptr: *const T) -> Self {
+        Weak { weak: unsafe { Some(& *ptr) } }
+    }
 }
