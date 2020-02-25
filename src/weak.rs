@@ -87,18 +87,20 @@ impl<'a, T> WeakMut<'a, T> where T: Weakable {
         WeakMut { weak: Some(r) }
     }
 
-    pub fn invalidate(&mut self) {
+    pub fn get_ref_mut(mut self) -> Option<&'a mut T> {
         if let Some(r) = &mut self.weak {
             r.reset_weak_exists();
         }
-        self.weak = None;
+        self.weak
     }
 
-    pub fn get_ref_mut(&mut self) -> Option<&mut T> {
-        if let Some(r) = &mut self.weak {
-            r.reset_weak_exists();
+    pub fn downgrade(mut self) -> Weak<'a, T> {
+        match self.get_ref_mut() {
+            Some(r) => unsafe {
+                Weak::from(& *(r as *mut T as *const T))
+            },
+            None => Weak::default(),
         }
-        self.weak.take()
     }
 }
 
