@@ -207,15 +207,15 @@ struct AllocBlock {
     /// Policies to be applied to the data in order from 0 to MAX_POLICIES
     policies: [Policy; MAX_POLICIES],
 
-    // A Weak pointer holds a references
-    // We can figure out how we want to manage this thing later
-    weak_exists: bool,
-
     // The full size of the allocated block
     full_size: usize,
 
     // The amount of the data allocated
     length: usize,
+
+    // A Weak pointer holds a references
+    // We can figure out how we want to manage this thing later
+    weak_exists: bool,
 }
 
 impl Weakable for AllocBlock {
