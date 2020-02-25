@@ -33,6 +33,15 @@ impl<'a, T> Weak<'a, T> where T: Weakable {
         Weak::from(r)
     }
 
+    pub unsafe fn as_ptr(mut self) -> *const T {
+        match self.get_ref() {
+            Some(r) => {
+                r as *const T
+            },
+            None => panic!("Called as_ptr on invalid Weak"),
+        }
+    }
+
     pub fn invalidate(&mut self) {
         self.weak = None;
     }
@@ -84,6 +93,16 @@ impl<'a, T> WeakMut<'a, T> where T: Weakable {
     pub unsafe fn from_ptr(ptr: *mut T) -> Self {
         let r = &mut *ptr;
         WeakMut::from(r)
+    }
+
+    pub unsafe fn as_ptr(mut self) -> *mut T {
+        match self.get_ref_mut() {
+            Some(r) => {
+                r.reset_weak_exists();
+                r as *mut T
+            },
+            None => panic!("Called as_ptr on invalid WeakMut"),
+        }
     }
 
     pub fn get_ref_mut(mut self) -> Option<&'a mut T> {
