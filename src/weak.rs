@@ -51,6 +51,16 @@ impl<'a, T> Weak<'a, T> where T: Weakable {
         }
         self.weak
     }
+
+    pub fn upgrade(self) -> WeakMut<'a, T> {
+        match self.weak {
+            Some(r) => unsafe {
+                // This will check if another WeakMut exists
+                WeakMut::from(&mut *(r as *const T as *mut T))
+            },
+            None => WeakMut::default(),
+        }
+    }
 }
 
 pub struct WeakMut<'a, T> where T: Weakable {
