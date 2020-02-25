@@ -30,10 +30,7 @@ impl<'a, T> Default for Weak<'a, T> where T: Weakable {
 impl<'a, T> Weak<'a, T> where T: Weakable {
     pub unsafe fn from_ptr(ptr: *const T) -> Self {
         let r = & *ptr;
-        if r.weak_exists() {
-            panic!("Tried to create Weak when WeakMut exists");
-        }
-        Weak { weak: Some(r) }
+        Weak::from(r)
     }
 
     pub fn invalidate(&mut self) {
@@ -69,6 +66,9 @@ pub struct WeakMut<'a, T> where T: Weakable {
 
 impl<'a, T> From<&'a mut T> for WeakMut<'a, T> where T: Weakable {
     fn from(r: &'a mut T) -> Self {
+        if r.weak_exists() {
+            panic!("Tried to create WeakMut when WeakMut exists");
+        }
         r.set_weak_exists();
         WeakMut { weak: Some(r) }
     }
@@ -83,8 +83,7 @@ impl<'a, T> Default for WeakMut<'a, T> where T: Weakable {
 impl<'a, T> WeakMut<'a, T> where T: Weakable {
     pub unsafe fn from_ptr(ptr: *mut T) -> Self {
         let r = &mut *ptr;
-        r.set_weak_exists();
-        WeakMut { weak: Some(r) }
+        WeakMut::from(r)
     }
 
     pub fn get_ref_mut(mut self) -> Option<&'a mut T> {
