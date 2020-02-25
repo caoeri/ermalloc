@@ -8,6 +8,8 @@ use core::ffi::c_void;
 use core::iter::Iterator;
 use core::mem::transmute;
 
+use crate::weak::*;
+
 use reed_solomon::{Buffer, Decoder, Encoder};
 
 const MAX_POLICIES: usize = 3;
@@ -205,11 +207,29 @@ struct AllocBlock {
     /// Policies to be applied to the data in order from 0 to MAX_POLICIES
     policies: [Policy; MAX_POLICIES],
 
+    // A Weak pointer holds a references
+    // We can figure out how we want to manage this thing later
+    weak_exists: bool,
+
     // The full size of the allocated block
     full_size: usize,
 
     // The amount of the data allocated
     length: usize,
+}
+
+impl Weakable for AllocBlock {
+    fn weak_exists(&self) -> bool {
+        self.weak_exists
+    }
+
+    fn set_weak_exists(&mut self) {
+        self.weak_exists = true;
+    }
+
+    fn reset_weak_exists(&mut self) {
+        self.weak_exists = false;
+    }
 }
 
 // #[cfg(light_weight)]
@@ -242,7 +262,7 @@ impl AllocBlock {
         full_size
     }
 
-    fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
+    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> WeakMut<'a, AllocBlock> {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
@@ -262,13 +282,18 @@ impl AllocBlock {
                 block.full_size = full_size;
                 block.length = size;
                 block.policies = *policies;
-                block
+                WeakMut::from(block)
             }
             Err(_e) => panic!("Invalid layout arguments"),
         }
     }
 
-    fn drop(&mut self) {
+    pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
+        let r = w.get_ref_mut().expect("Called drop on invalid WeakMut");
+        r.drop_ref();
+    }
+
+    fn drop_ref(&mut self) {
         let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
@@ -286,7 +311,7 @@ impl AllocBlock {
 
     fn drop_ptr(ptr: *mut u8) {
         let block = unsafe { &mut *((ptr as *mut AllocBlock).sub(1)) };
-        block.drop()
+        block.drop_ref()
     }
 
     unsafe fn full_slice(&self) -> &mut [u8] {
