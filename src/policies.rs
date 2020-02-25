@@ -320,11 +320,6 @@ impl AllocBlock {
         }
     }
 
-    fn drop_ptr(ptr: *mut u8) {
-        let block = unsafe { &mut *((ptr as *mut AllocBlock).sub(1)) };
-        block.drop_ref()
-    }
-
     unsafe fn full_slice(&self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
     }
