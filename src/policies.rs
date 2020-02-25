@@ -213,7 +213,7 @@ struct AllocBlock {
     // The amount of the data allocated
     length: usize,
 
-    // A Weak pointer holds a references
+    // A WeakMut holds a references
     // We can figure out how we want to manage this thing later
     weak_exists: bool,
 }
