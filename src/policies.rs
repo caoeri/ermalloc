@@ -267,9 +267,7 @@ impl AllocBlock {
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match res {
-            Ok(_val) => {
-                let layout = res.unwrap();
-
+            Ok(layout) => {
                 let block_ptr: *mut u8 = unsafe { alloc(layout) };
                 let block: &'a mut AllocBlock;
 
@@ -282,8 +280,30 @@ impl AllocBlock {
                 block.full_size = full_size;
                 block.length = size;
                 block.policies = *policies;
+                block.weak_exists = false;
                 WeakMut::from(block)
-            }
+            },
+            Err(_e) => panic!("Invalid layout arguments"),
+        }
+    }
+
+    pub fn renew<'a>(mut w: WeakMut<'a, AllocBlock>, new_size: usize, new_policies: &[Policy; MAX_POLICIES]) -> WeakMut<'a, AllocBlock> {
+        let new_full_size = AllocBlock::size_of(new_size, new_policies);
+        let new_res = Layout::from_size_align(new_full_size + std::mem::size_of::<AllocBlock>(), 16);
+
+        match new_res {
+            Ok(layout) => {
+                let new_block_ptr = unsafe { realloc(w.as_ptr() as *mut u8, layout, new_size) };
+
+                let new_block: &'a mut AllocBlock;
+
+                new_block = unsafe { &mut *(new_block_ptr as *mut AllocBlock) };
+                new_block.full_size = new_full_size;
+                new_block.length = new_size;
+                new_block.policies = *new_policies;
+                new_block.weak_exists = false;
+                WeakMut::from(new_block)
+            },
             Err(_e) => panic!("Invalid layout arguments"),
         }
     }
