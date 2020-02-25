@@ -22,4 +22,12 @@ impl<'a, T> Weak<'a, T> {
     pub unsafe fn from_ptr(ptr: *const T) -> Self {
         Weak { weak: unsafe { Some(& *ptr) } }
     }
+
+    pub fn invalidate(&mut self) {
+        self.weak = None;
+    }
+
+    pub fn get_ref(&self) -> Option<&T> {
+        self.weak
+    }
 }
