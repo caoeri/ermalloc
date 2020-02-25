@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use alloc::alloc::{alloc, dealloc, realloc, Layout};
+use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc, Layout};
 use core::convert::TryFrom;
 use core::ffi::c_void;
 use core::iter::Iterator;
@@ -262,21 +262,22 @@ impl AllocBlock {
         full_size
     }
 
-    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> WeakMut<'a, AllocBlock> {
+    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES], zeroed: bool) -> WeakMut<'a, AllocBlock> {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(layout) => {
-                let block_ptr: *mut u8 = unsafe { alloc(layout) };
+                let block_ptr: *mut u8 = unsafe {
+                    if zeroed {
+                        alloc_zeroed(layout)
+                    } else {
+                        alloc(layout)
+                    }
+                };
                 let block: &'a mut AllocBlock;
 
-                // unsafe {
-                //     block = std::mem::transmute(block_ptr);
-                // }
-
                 block = unsafe { &mut *(block_ptr as *mut AllocBlock) };
-                // TODO: Initialize block here
                 block.full_size = full_size;
                 block.length = size;
                 block.policies = *policies;
