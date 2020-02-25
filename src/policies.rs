@@ -289,8 +289,9 @@ impl AllocBlock {
     }
 
     pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
-        let r = w.get_ref_mut().expect("Called drop on invalid WeakMut");
-        r.drop_ref();
+        w.get_ref_mut()
+         .expect("Called drop on invalid WeakMut")
+         .drop_ref();
     }
 
     fn drop_ref(&mut self) {
