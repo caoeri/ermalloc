@@ -288,6 +288,11 @@ impl AllocBlock {
         }
     }
 
+    pub fn from_usr_ptr<'a>(ptr: *const u8) -> Weak<'a, AllocBlock> {
+        let block = unsafe { & *(ptr as *const AllocBlock).sub(1) };
+        Weak::from(block)
+    }
+
     pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
         w.get_ref_mut()
          .expect("Called drop on invalid WeakMut")
