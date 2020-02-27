@@ -2,11 +2,13 @@
 
 extern crate alloc;
 
-use alloc::alloc::{alloc, dealloc, realloc, Layout};
+use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc, Layout};
 use core::convert::TryFrom;
 use core::ffi::c_void;
 use core::iter::Iterator;
 use core::mem::transmute;
+
+use crate::weak::*;
 
 use reed_solomon::{Buffer, Decoder, Encoder};
 
@@ -210,6 +212,24 @@ struct AllocBlock {
 
     // The amount of the data allocated
     length: usize,
+
+    // A WeakMut holds a references
+    // We can figure out how we want to manage this thing later
+    weak_exists: bool,
+}
+
+impl Weakable for AllocBlock {
+    fn weak_exists(&self) -> bool {
+        self.weak_exists
+    }
+
+    fn set_weak_exists(&mut self) {
+        self.weak_exists = true;
+    }
+
+    fn reset_weak_exists(&mut self) {
+        self.weak_exists = false;
+    }
 }
 
 // #[cfg(light_weight)]
@@ -242,33 +262,70 @@ impl AllocBlock {
         full_size
     }
 
-    fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES]) -> &'a mut AllocBlock {
+    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES], zeroed: bool) -> WeakMut<'a, AllocBlock> {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match res {
-            Ok(_val) => {
-                let layout = res.unwrap();
-
-                let block_ptr: *mut u8 = unsafe { alloc(layout) };
+            Ok(layout) => {
+                let block_ptr: *mut u8 = unsafe {
+                    if zeroed {
+                        alloc_zeroed(layout)
+                    } else {
+                        alloc(layout)
+                    }
+                };
                 let block: &'a mut AllocBlock;
 
-                // unsafe {
-                //     block = std::mem::transmute(block_ptr);
-                // }
-
                 block = unsafe { &mut *(block_ptr as *mut AllocBlock) };
-                // TODO: Initialize block here
                 block.full_size = full_size;
                 block.length = size;
                 block.policies = *policies;
-                block
-            }
+                block.weak_exists = false;
+                WeakMut::from(block)
+            },
             Err(_e) => panic!("Invalid layout arguments"),
         }
     }
 
-    fn drop(&mut self) {
+    pub fn renew<'a>(mut w: WeakMut<'a, AllocBlock>, new_size: usize, new_policies: &[Policy; MAX_POLICIES]) -> WeakMut<'a, AllocBlock> {
+        let new_full_size = AllocBlock::size_of(new_size, new_policies);
+        let new_res = Layout::from_size_align(new_full_size + std::mem::size_of::<AllocBlock>(), 16);
+
+        match new_res {
+            Ok(layout) => {
+                let new_block_ptr = unsafe { realloc(w.as_ptr() as *mut u8, layout, new_size) };
+
+                let new_block: &'a mut AllocBlock;
+
+                new_block = unsafe { &mut *(new_block_ptr as *mut AllocBlock) };
+                new_block.full_size = new_full_size;
+                new_block.length = new_size;
+                new_block.policies = *new_policies;
+                new_block.weak_exists = false;
+                WeakMut::from(new_block)
+            },
+            Err(_e) => panic!("Invalid layout arguments"),
+        }
+    }
+
+    pub fn from_usr_ptr<'a>(ptr: *const u8) -> Weak<'a, AllocBlock> {
+        let block = unsafe { & *(ptr as *const AllocBlock).sub(1) };
+        Weak::from(block)
+    }
+
+    pub fn from_usr_ptr_mut<'a>(ptr: *mut u8) -> WeakMut<'a, AllocBlock> {
+        let block = unsafe { &mut *(ptr as *mut AllocBlock).sub(1) };
+        WeakMut::from(block)
+    }
+
+    pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
+        w.get_ref_mut()
+         .expect("Called drop on invalid WeakMut")
+         .drop_ref();
+    }
+
+    fn drop_ref(&mut self) {
         let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
@@ -282,11 +339,6 @@ impl AllocBlock {
             }
             Err(_e) => panic!("Invalid layout arguments"),
         }
-    }
-
-    fn drop_ptr(ptr: *mut u8) {
-        let block = unsafe { &mut *((ptr as *mut AllocBlock).sub(1)) };
-        block.drop()
     }
 
     unsafe fn full_slice(&self) -> &mut [u8] {
