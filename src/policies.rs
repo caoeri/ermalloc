@@ -165,7 +165,6 @@ impl Policy {
         }
     }
 
-
     fn apply_policy(&self, buffer: &mut [u8]) {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -174,7 +173,6 @@ impl Policy {
                 }
                 let data_len = buffer.len() / (*n_copies as usize);
                 let (data, err) = self.split_buffer_mut(buffer);
-                
                 for slice in err.chunks_exact_mut(data_len).skip(1) {
                     slice.copy_from_slice(data)
                 }
@@ -253,16 +251,18 @@ impl AllocBlock {
                 Policy::Redundancy(num_copies) => {
                     full_size *= usize::try_from(*num_copies).unwrap()
                 }
-                Policy::ReedSolomon(n_ecc) => {
-                    full_size += usize::try_from(*n_ecc).unwrap()
-                }
+                Policy::ReedSolomon(n_ecc) => full_size += usize::try_from(*n_ecc).unwrap(),
                 _ => (),
             }
         }
         full_size
     }
 
-    pub fn new<'a>(size: usize, policies: &[Policy; MAX_POLICIES], zeroed: bool) -> WeakMut<'a, AllocBlock> {
+    pub fn new<'a>(
+        size: usize,
+        policies: &[Policy; MAX_POLICIES],
+        zeroed: bool,
+    ) -> WeakMut<'a, AllocBlock> {
         let full_size: usize = AllocBlock::size_of(size, policies);
         let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
 
@@ -282,15 +282,24 @@ impl AllocBlock {
                 block.length = size;
                 block.policies = *policies;
                 block.weak_exists = false;
+
+                if zeroed {
+                    block.apply_policy();
+                }
                 WeakMut::from(block)
-            },
+            }
             Err(_e) => panic!("Invalid layout arguments"),
         }
     }
 
-    pub fn renew<'a>(mut w: WeakMut<'a, AllocBlock>, new_size: usize, new_policies: &[Policy; MAX_POLICIES]) -> WeakMut<'a, AllocBlock> {
+    pub fn renew<'a>(
+        mut w: WeakMut<'a, AllocBlock>,
+        new_size: usize,
+        new_policies: &[Policy; MAX_POLICIES],
+    ) -> WeakMut<'a, AllocBlock> {
         let new_full_size = AllocBlock::size_of(new_size, new_policies);
-        let new_res = Layout::from_size_align(new_full_size + std::mem::size_of::<AllocBlock>(), 16);
+        let new_res =
+            Layout::from_size_align(new_full_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match new_res {
             Ok(layout) => {
@@ -303,14 +312,15 @@ impl AllocBlock {
                 new_block.length = new_size;
                 new_block.policies = *new_policies;
                 new_block.weak_exists = false;
+                new_block.apply_policy();
                 WeakMut::from(new_block)
-            },
+            }
             Err(_e) => panic!("Invalid layout arguments"),
         }
     }
 
     pub fn from_usr_ptr<'a>(ptr: *const u8) -> Weak<'a, AllocBlock> {
-        let block = unsafe { & *(ptr as *const AllocBlock).sub(1) };
+        let block = unsafe { &*(ptr as *const AllocBlock).sub(1) };
         Weak::from(block)
     }
 
@@ -321,8 +331,8 @@ impl AllocBlock {
 
     pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
         w.get_ref_mut()
-         .expect("Called drop on invalid WeakMut")
-         .drop_ref();
+            .expect("Called drop on invalid WeakMut")
+            .drop_ref();
     }
 
     fn drop_ref(&mut self) {
@@ -355,9 +365,24 @@ impl AllocBlock {
     }
 
     fn correct_bits_helper(&self, index: usize, full_buffer: &mut [u8]) -> u32 {
-        let corrected_bits = match index == MAX_POLICIES {
+        let corrected_bits = match (index == MAX_POLICIES) {
             true => return 0,
-            false => self.correct_bits_helper(index + 1, self.policies[index].get_data_mut(full_buffer))
+            false => match self.policies[index] {
+                Policy::Nil => return 0,
+                Policy::Redundancy(n_copies) => {
+                    if full_buffer.len() % (n_copies as usize) != 0 {
+                        panic!("Redundancy: Size of buffer is not a multiple of the data size");
+                    }
+                    let data_len = full_buffer.len() / (n_copies as usize);
+
+                    full_buffer
+                        .chunks_exact_mut(data_len)
+                        .map(|slice| self.correct_bits_helper(index + 1, slice))
+                        .sum()
+                }
+                _ => self
+                    .correct_bits_helper(index + 1, self.policies[index].get_data_mut(full_buffer)),
+            },
         };
 
         corrected_bits + self.policies[index].correct_buffer(full_buffer)
@@ -371,13 +396,18 @@ impl AllocBlock {
     fn is_corrupted_helper(&self, index: usize, full_buffer: &[u8]) -> bool {
         let corrected_bits = match index == MAX_POLICIES {
             true => return false,
-            false => self.is_corrupted_helper(index + 1, self.policies[index].get_data(full_buffer))
+            false => match self.policies[index] {
+                Policy::Nil => return false,
+                _ => {
+                    self.is_corrupted_helper(index + 1, self.policies[index].get_data(full_buffer))
+                }
+            },
         };
 
         corrected_bits || self.policies[index].is_corrupted(full_buffer)
     }
 
-    fn apply_policy(&self, buffer: &mut [u8]) {
+    fn apply_policy(&self) {
         let buffer = unsafe { self.full_slice() };
         self.apply_policy_helper(0, buffer)
     }
@@ -385,7 +415,11 @@ impl AllocBlock {
     fn apply_policy_helper(&self, index: usize, full_buffer: &mut [u8]) {
         match index == MAX_POLICIES {
             true => return,
-            false => self.apply_policy_helper(index + 1, self.policies[index].get_data_mut(full_buffer))
+            false => match self.policies[index] {
+                Policy::Nil => return,
+                _ => self
+                    .apply_policy_helper(index + 1, self.policies[index].get_data_mut(full_buffer)),
+            },
         };
 
         self.policies[index].apply_policy(full_buffer)
@@ -398,9 +432,7 @@ mod tests {
 
     #[test]
     fn redundancy_check() {
-        let r_policy = Policy::Redundancy(3);
-
-        let block: &mut AllocBlock = AllocBlock::new(1, &[r_policy, Policy::Nil, Policy::Nil]);
+        let block = AllocBlock::new(1, &[Policy::Redundancy(3), Policy::Nil, Policy::Nil], false);
 
         // Create errors
         // unsafe {
@@ -408,18 +440,40 @@ mod tests {
         //     *block.ptr.add(1) = 0b1010;
         //     *block.ptr.add(2) = 0b0000;
         // }
-        let slice = unsafe { block.full_slice() };
-
+        let block_ref = block.get_ref_mut().unwrap();
+        let slice = unsafe { block_ref.full_slice() };
         slice[0] = 0b1111;
         slice[1] = 0b1010;
         slice[2] = 0b0000;
-
-        // assert_eq!(r_policy.enforce_redundancy(block, 0), 4);
-
+        assert_eq!(block_ref.is_corrupted(), true);
+        assert_eq!(block_ref.correct_buffer(), 4);
+        assert_eq!(block_ref.is_corrupted(), false);
+        let slice = unsafe { block_ref.full_slice() };
         for idx in 0..3 {
             unsafe {
-                // assert_eq!(*block.ptr.add(idx), 0b1010 as u8);
+                assert_eq!(slice[idx], 0b1010 as u8);
             }
         }
+    }
+
+    #[test]
+    fn fec_check() {
+        let block = AllocBlock::new(
+            1,
+            &[Policy::ReedSolomon(3), Policy::Nil, Policy::Nil],
+            false,
+        );
+
+        let block_ref = block.get_ref_mut().unwrap();
+        let slice = unsafe { block_ref.full_slice() };
+        slice[0] = 0b1111;
+        block_ref.apply_policy();
+        let slice = unsafe { block_ref.full_slice() };
+        slice[0] = 0b1011;
+        assert_eq!(block_ref.is_corrupted(), true);
+        assert_eq!(block_ref.correct_buffer(), 1);
+        assert_eq!(block_ref.is_corrupted(), false);
+        let slice = unsafe { block_ref.full_slice() };
+        assert_eq!(slice[0], 0b1111 as u8);
     }
 }
