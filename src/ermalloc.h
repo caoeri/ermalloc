@@ -98,8 +98,8 @@ int er_read_buf(void* base, void* dest, size_t offset, size_t len);
  * Write the data and then enforce the policy on new data
  *
  * @param base Pointer to start of allocation
- * @param src  Pointer to source of data
- * @param offset Bytes after base to start writing to
+ * @param src  Pointer to start of read data
+ * @param offset Bytes after base to start reading to
  * @param len Number of bytes to write
  * @return = 0 if no errors
  *         < 0 if unrecoverable errors, as defined by the associated policies
