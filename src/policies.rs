@@ -18,10 +18,13 @@ const MAX_POLICIES: usize = 3;
 #[derive(Copy, Clone)]
 pub enum Policy {
     Nil,
+    // The u32 here represents the total number of copies including the original data
     Redundancy(u32),
     ReedSolomon(u32),
     // Custom, // TODO: Make ths a function to arbitrary data
 }
+
+// TODO: Better naming for data
 
 // TODO:
 // Cleaner API
@@ -118,7 +121,7 @@ impl Policy {
         }
     }
 
-    /// Determines if the slice si corrupted give the current policy
+    /// Determines if the slice is corrupted if the current policy was used to correct the data.
     fn is_corrupted(&self, buffer: &[u8]) -> bool {
         let (data, ecc) = self.split_buffer(buffer);
 
@@ -143,7 +146,11 @@ impl Policy {
         }
     }
 
-    /// If any errors are present in the buffer, this wlil correct them
+    /// If any errors are present in the buffer, this will correct them and report the total number of errors.
+    /// You should do this before read operations in order to potentially correct any bits that have been corrupted.
+    /// 
+    /// Pre-conditions:
+    /// - This is intended to be used after apply_policy has been done.
     fn correct_buffer(&self, buffer: &mut [u8]) -> u32 {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -165,6 +172,10 @@ impl Policy {
         }
     }
 
+
+    /// Applies the policy on the given data. This assumes that the data in the data_slice is correct.
+    /// This is used to setup the data and after write operations in order to secure the data from
+    /// bitflips.
     fn apply_policy(&self, buffer: &mut [u8]) {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -187,12 +198,15 @@ impl Policy {
         }
     }
 
-    /// Unwraps one layer of policy application to get the data
+    /// From the buffer containing the data plus the redundancy bits, this returns
+    /// a slice referring to just the data bits
     fn get_data_mut<'a>(&self, buffer: &'a mut [u8]) -> &'a mut [u8] {
         let (data, _) = self.split_buffer_mut(buffer);
         data
     }
 
+    /// From the buffer containing the data plus the redundancy bits, this returns
+    /// a slice referring to just the data bits
     fn get_data<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
         let (data, _) = self.split_buffer(buffer);
         data
@@ -200,15 +214,20 @@ impl Policy {
 }
 
 /// Metadata that is adjacent to the actual data stored.
+/// 
+/// Since each policy sees data as a combination of data and metadata (combined these for the Buffer/codeword), 
+/// we recursively treat the the buffer as data for the next policy. This is similar to the how network packets
+/// gain data as you move up the OSI layers or you acn think of it like an onion gradually wrapping around the data.
 #[repr(C)]
 struct AllocBlock {
-    /// Policies to be applied to the data in order from 0 to MAX_POLICIES
+    /// Policies to be applied to the data.
+    /// Policies are applied in reverse order from MAX_POLICIES - 1 to 0.
     policies: [Policy; MAX_POLICIES],
 
-    // The full size of the allocated block
-    full_size: usize,
+    // The data_length + error correction bits
+    buffer_size: usize,
 
-    // The amount of the data allocated
+    // The amount of the data allocated (as specified by the user)
     length: usize,
 
     // A WeakMut holds a references
@@ -232,6 +251,9 @@ impl Weakable for AllocBlock {
 
 // #[cfg(light_weight)]
 impl AllocBlock {
+    /// Gets a pointer to the data bits
+    /// 
+    /// [AllocBlock Metadata | Data]
     fn ptr(&self) -> *mut u8 {
         let block_ptr = self as *const AllocBlock;
         unsafe {
@@ -240,22 +262,24 @@ impl AllocBlock {
         }
     }
 
+    /// Gets a pointer to the data bits and casts it to a FFI friendly manner
     fn as_ptr(&self) -> *mut c_void {
         self.ptr() as *mut c_void
     }
 
-    fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
-        let mut full_size = desired_size;
+    /// Computes the total buffer size if the data length was used and given policies were applied. 
+    fn size_of(data_length: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
+        let mut buffer_size = data_length;
         for p in policies.iter().rev() {
             match p {
                 Policy::Redundancy(num_copies) => {
-                    full_size *= usize::try_from(*num_copies).unwrap()
+                    buffer_size *= usize::try_from(*num_copies).unwrap()
                 }
-                Policy::ReedSolomon(n_ecc) => full_size += usize::try_from(*n_ecc).unwrap(),
+                Policy::ReedSolomon(n_ecc) => buffer_size += usize::try_from(*n_ecc).unwrap(),
                 _ => (),
             }
         }
-        full_size
+        buffer_size
     }
 
     pub fn new<'a>(
@@ -263,8 +287,8 @@ impl AllocBlock {
         policies: &[Policy; MAX_POLICIES],
         zeroed: bool,
     ) -> WeakMut<'a, AllocBlock> {
-        let full_size: usize = AllocBlock::size_of(size, policies);
-        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
+        let buffer_size: usize = AllocBlock::size_of(size, policies);
+        let res = Layout::from_size_align(buffer_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(layout) => {
@@ -278,7 +302,7 @@ impl AllocBlock {
                 let block: &'a mut AllocBlock;
 
                 block = unsafe { &mut *(block_ptr as *mut AllocBlock) };
-                block.full_size = full_size;
+                block.buffer_size = buffer_size;
                 block.length = size;
                 block.policies = *policies;
                 block.weak_exists = false;
@@ -297,9 +321,9 @@ impl AllocBlock {
         new_size: usize,
         new_policies: &[Policy; MAX_POLICIES],
     ) -> WeakMut<'a, AllocBlock> {
-        let new_full_size = AllocBlock::size_of(new_size, new_policies);
+        let new_buffer_size = AllocBlock::size_of(new_size, new_policies);
         let new_res =
-            Layout::from_size_align(new_full_size + std::mem::size_of::<AllocBlock>(), 16);
+            Layout::from_size_align(new_buffer_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match new_res {
             Ok(layout) => {
@@ -308,7 +332,7 @@ impl AllocBlock {
                 let new_block: &'a mut AllocBlock;
 
                 new_block = unsafe { &mut *(new_block_ptr as *mut AllocBlock) };
-                new_block.full_size = new_full_size;
+                new_block.buffer_size = new_buffer_size;
                 new_block.length = new_size;
                 new_block.policies = *new_policies;
                 new_block.weak_exists = false;
@@ -336,8 +360,8 @@ impl AllocBlock {
     }
 
     fn drop_ref(&mut self) {
-        let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
-        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
+        let buffer_size: usize = AllocBlock::size_of(self.length, &self.policies);
+        let res = Layout::from_size_align(buffer_size + std::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(_val) => {
@@ -351,19 +375,26 @@ impl AllocBlock {
         }
     }
 
-    unsafe fn full_slice(&self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
+    /// Gets a slice the represents the total data + error correct bytes that were allocated. (This should only be used internally)
+    unsafe fn buffer(&self) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.buffer_size) }
     }
 
+    /// Gets a slice representing the bytes that the user wanted
     fn data_slice(&self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.length) }
     }
 
+    /// The public function used to correct the buffer from potential SEU events. This should be used before
+    /// any read operations.
     fn correct_buffer(&mut self) -> u32 {
-        let buffer = unsafe { self.full_slice() };
+        let buffer = unsafe { self.buffer() };
         self.correct_bits_helper(0, buffer)
     }
 
+    /// This is a helper function for correct buffer that recurisively is used to apply each policy.
+    /// Note that this function is more expensive than is corrupted since it corrects for every branch
+    /// of the redundancy.
     fn correct_bits_helper(&self, index: usize, full_buffer: &mut [u8]) -> u32 {
         let corrected_bits = match (index == MAX_POLICIES) {
             true => return 0,
@@ -388,8 +419,10 @@ impl AllocBlock {
         corrected_bits + self.policies[index].correct_buffer(full_buffer)
     }
 
+    /// Determines if the buffer is corrupted. When possible, use this function as opposed to correct_buffer since
+    /// this function is cheaper.
     fn is_corrupted(&self) -> bool {
-        let buffer = unsafe { self.full_slice() };
+        let buffer = unsafe { self.buffer() };
         self.is_corrupted_helper(0, buffer)
     }
 
@@ -407,11 +440,16 @@ impl AllocBlock {
         corrected_bits || self.policies[index].is_corrupted(full_buffer)
     }
 
+    /// Applies the policy list to the buffer of data assuming that the
+    /// data in the first data_length bits are correct.
+    /// This should be used after any write operations to provide error protection against those bits.
     fn apply_policy(&self) {
-        let buffer = unsafe { self.full_slice() };
+        let buffer = unsafe { self.buffer() };
         self.apply_policy_helper(0, buffer)
     }
 
+
+    /// Helper function that applies the policy at the given index.
     fn apply_policy_helper(&self, index: usize, full_buffer: &mut [u8]) {
         match index == MAX_POLICIES {
             true => return,
@@ -441,14 +479,14 @@ mod tests {
         //     *block.ptr.add(2) = 0b0000;
         // }
         let block_ref = block.get_ref_mut().unwrap();
-        let slice = unsafe { block_ref.full_slice() };
+        let slice = unsafe { block_ref.buffer() };
         slice[0] = 0b1111;
         slice[1] = 0b1010;
         slice[2] = 0b0000;
         assert_eq!(block_ref.is_corrupted(), true);
         assert_eq!(block_ref.correct_buffer(), 4);
         assert_eq!(block_ref.is_corrupted(), false);
-        let slice = unsafe { block_ref.full_slice() };
+        let slice = unsafe { block_ref.buffer() };
         for idx in 0..3 {
             unsafe {
                 assert_eq!(slice[idx], 0b1010 as u8);
@@ -465,15 +503,16 @@ mod tests {
         );
 
         let block_ref = block.get_ref_mut().unwrap();
-        let slice = unsafe { block_ref.full_slice() };
+        let slice = unsafe { block_ref.buffer() };
         slice[0] = 0b1111;
         block_ref.apply_policy();
-        let slice = unsafe { block_ref.full_slice() };
+        let slice = unsafe { block_ref.buffer() };
         slice[0] = 0b1011;
         assert_eq!(block_ref.is_corrupted(), true);
         assert_eq!(block_ref.correct_buffer(), 1);
         assert_eq!(block_ref.is_corrupted(), false);
-        let slice = unsafe { block_ref.full_slice() };
+        let slice = unsafe { block_ref.buffer() };
         assert_eq!(slice[0], 0b1111 as u8);
     }
+
 }
