@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::policies::*;
+use crate::weak::*;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -137,7 +138,7 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
 }
 
 #[no_mangle]
-pub extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+pub unsafe extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     if size == 0 {
         return ptr::null::<c_void>() as *mut c_void;
     }
@@ -157,16 +158,16 @@ pub extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *
             };
         }
     }
-    AllocBlock::new(size, &policy_arr, false).as_ptr()
+    AllocBlock::new(size, &policy_arr, false).as_ptr().add(1) as *mut c_void
 }
 
 #[no_mangle]
-pub extern "C" fn er_free(ptr: *const c_void)  {
-    AllocBlock::free_ptr(ptr as *const u8);
+pub unsafe extern "C" fn er_free(ptr: *const c_void)  {
+    AllocBlock::drop(AllocBlock::from_usr_ptr_mut(ptr as *mut u8));
 }
 
 #[no_mangle]
-pub extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+pub unsafe extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     let bytes: size_t = nmemb * size;
     if size == 0 {
         return ptr::null::<c_void>() as *mut c_void;
@@ -187,12 +188,11 @@ pub extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPoli
             };
         }
     }
-    AllocBlock::new(bytes, &policy_arr, true).as_ptr()
+    AllocBlock::new(bytes, &policy_arr, true).as_ptr().add(1) as *mut c_void
 }
 
 #[no_mangle]
-pub extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    let block_ref = AllocBlock::get_block(ptr as *const u8);
+pub unsafe extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
         let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
@@ -208,11 +208,11 @@ pub extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const 
             };
         }
     }
-    AllocBlock::realloc(block_ref, size, &policy_arr).as_ptr()
+    AllocBlock::renew(AllocBlock::from_usr_ptr_mut(ptr as *mut u8), size, &policy_arr).as_ptr().add(1) as *mut c_void
 }
 
 #[no_mangle]
-pub extern "C" fn er_reallocarray(ptr: *const c_void, nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+pub unsafe extern "C" fn er_reallocarray(ptr: *const c_void, nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     ptr::null::<c_void>() as *mut c_void
 }
 

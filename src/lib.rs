@@ -2,6 +2,7 @@
 
 mod policies;
 mod weak;
+mod ffi;
 
 #[cfg(test)]
 mod tests {
