@@ -61,13 +61,22 @@ void* er_reallocarray(void* ptr, size_t nmemb, size_t size, const struct er_poli
 void er_change_policies(void* ptr, const struct er_policy_list* policies);
 
 /**
+ * After allocating a region with policies:
+ * 1. Write your data into your buffer
+ * 2. Call er_setup_policies to initialize the policies on your data
+ * 3. Further calls to er_read/write_buf will correct this bits
+ * 4. You can also use er_correct_buffer to manually apply corrections
+ */
+void er_setup_policies(const void* ptr);
+
+/**
  * Use policies to find bit errors and correct them if possible and desired
  *
  * @return = 0 if no errors
  *         < 0 if unrecoverable errors, as defined by the associated policies
  *         > 0 number of errors found/corrected, as defined by the associated policies
  */
-int er_enforce_policies(void* ptr);
+int er_correct_buffer(void* ptr);
 
 /**
  * Enforce the policy and read the data
@@ -83,7 +92,7 @@ int er_enforce_policies(void* ptr);
  *         < 0 if unrecoverable errors, as defined by the associated policies
  *         > 0 number of errors found/corrected, as defined by the associated policies
  */
-int er_read_buf(void* base, void* dest, size_t offset, size_t len);
+int er_read_buf(const void* base, void* dest, size_t offset, size_t len);
 
 /**
  * Write the data and then enforce the policy on new data

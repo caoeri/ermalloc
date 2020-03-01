@@ -13,11 +13,7 @@ void redundant_test(void)
 
     int* x = er_malloc(sizeof(int), &p);
     x[0] = 1;
-    x[1] = 2;
-    x[2] = 2;
-    x[3] = 2;
-    er_enforce_policies(x);
-    printf("%d %d %d %d\n", x[0], x[1], x[2], x[3]);
+    er_setup_policies(x);
     er_free(x);
 }
 

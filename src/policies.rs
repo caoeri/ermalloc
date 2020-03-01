@@ -358,6 +358,12 @@ impl AllocBlock {
     fn data_slice(&self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.length) }
     }
+    
+    pub fn correct_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
+        w.get_ref_mut()
+            .expect("correct_buffer_ffi")
+            .correct_buffer()
+    }
 
     fn correct_buffer(&mut self) -> u32 {
         let buffer = unsafe { self.full_slice() };
@@ -405,6 +411,13 @@ impl AllocBlock {
         };
 
         corrected_bits || self.policies[index].is_corrupted(full_buffer)
+    }
+
+    pub fn apply_policy_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
+        w.downgrade()
+            .get_ref()
+            .expect("apply policy ffi")
+            .apply_policy();
     }
 
     fn apply_policy(&self) {

@@ -216,3 +216,14 @@ pub unsafe extern "C" fn er_reallocarray(ptr: *const c_void, nmemb: size_t, size
     ptr::null::<c_void>() as *mut c_void
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn er_setup_policies(ptr: *const c_void) {
+    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
+    AllocBlock::apply_policy_ffi(w);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn er_correct_buffer(ptr: *mut c_void) -> c_int {
+    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
+    AllocBlock::correct_buffer_ffi(w) as c_int
+}
