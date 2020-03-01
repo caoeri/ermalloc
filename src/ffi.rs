@@ -1,9 +1,11 @@
+extern crate core;
+
 use libc::*;
 
-use std::ptr;
-use std::convert::TryFrom;
-use std::error::Error;
-use std::fmt;
+use core::ptr;
+use core::convert::TryFrom;
+use core::fmt;
+use core::slice;
 
 use crate::policies::*;
 use crate::weak::*;
@@ -27,8 +29,6 @@ impl fmt::Display for FfiError {
         write!(f, "{:?}", self)
     }
 }
-
-impl Error for FfiError {}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -226,4 +226,17 @@ pub unsafe extern "C" fn er_setup_policies(ptr: *const c_void) {
 pub unsafe extern "C" fn er_correct_buffer(ptr: *mut c_void) -> c_int {
     let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
     AllocBlock::correct_buffer_ffi(w) as c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn er_read_buf(ptr: *mut c_void, dest: *mut c_void, offset: size_t, len: size_t) -> c_int {
+    let c = er_correct_buffer(ptr);
+    if c < 0 {
+        return c;
+    }
+    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
+    let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1;
+    let dst_buf = slice::from_raw_parts_mut(dest as *mut u8, len);
+    dst_buf.copy_from_slice(src_buf);
+    c
 }

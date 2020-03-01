@@ -92,7 +92,7 @@ int er_correct_buffer(void* ptr);
  *         < 0 if unrecoverable errors, as defined by the associated policies
  *         > 0 number of errors found/corrected, as defined by the associated policies
  */
-int er_read_buf(const void* base, void* dest, size_t offset, size_t len);
+int er_read_buf(void* base, void* dest, size_t offset, size_t len);
 
 /**
  * Write the data and then enforce the policy on new data

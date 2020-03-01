@@ -232,16 +232,16 @@ impl Weakable for AllocBlock {
 
 // #[cfg(light_weight)]
 impl AllocBlock {
+    pub fn ptr_ffi<'a>(mut w: Weak<'a, AllocBlock>) -> *mut u8 {
+        w.get_ref().expect("ptr_ffi").ptr()
+    }
+
     fn ptr(&self) -> *mut u8 {
         let block_ptr = self as *const AllocBlock;
         unsafe {
             let block_ptr: *mut u8 = block_ptr as *mut u8;
             block_ptr.add(std::mem::size_of::<AllocBlock>())
         }
-    }
-
-    fn as_ptr(&self) -> *mut c_void {
-        self.ptr() as *mut c_void
     }
 
     fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
@@ -351,8 +351,18 @@ impl AllocBlock {
         }
     }
 
-    unsafe fn full_slice(&self) -> &mut [u8] {
+    fn full_slice_mut(&mut self) -> &mut [u8] {
         unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
+    }
+
+    fn full_slice(&self) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
+    }
+
+    pub fn data_slice_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> &mut [u8] {
+        w.get_ref_mut()
+            .expect("data_slice_ffi")
+            .full_slice()
     }
 
     fn data_slice(&self) -> &mut [u8] {
