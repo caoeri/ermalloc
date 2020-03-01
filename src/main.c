@@ -3,6 +3,24 @@
 
 #include "ermalloc.h"
 
+void redundant_test(void)
+{
+    struct er_policy_list p = {
+        .policy = Redundancy,
+        .policy_data = &(int){3},
+        .next_policy = NULL
+    };
+
+    int* x = er_malloc(sizeof(int), &p);
+    x[0] = 1;
+    x[1] = 2;
+    x[2] = 2;
+    x[3] = 2;
+    er_enforce_policies(x);
+    printf("%d %d %d %d\n", x[0], x[1], x[2], x[3]);
+    er_free(x);
+}
+
 int main(void)
 {
     int* x = er_malloc(123, NULL);
@@ -17,5 +35,6 @@ int main(void)
     printf("x[12] = %d\n", x[12]);
     printf("x[234] = %d\n", x[234]);
     er_free(x);
+    redundant_test();
     return 0;
 }
