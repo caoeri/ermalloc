@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 mod policies;
-mod ffi;
+mod weak;
 
 #[cfg(test)]
 mod tests {
