@@ -201,7 +201,6 @@ impl Policy {
 
 /// Metadata that is adjacent to the actual data stored.
 #[repr(C)]
-#[derive(Clone)]
 pub struct AllocBlock {
     /// Policies to be applied to the data in order from 0 to MAX_POLICIES
     policies: [Policy; MAX_POLICIES],
@@ -230,7 +229,7 @@ impl Weakable for AllocBlock {
         self.weak_exists = false;
     }
 }
-*/
+
 // #[cfg(light_weight)]
 impl AllocBlock {
     fn ptr(&self) -> *mut u8 {
@@ -241,19 +240,7 @@ impl AllocBlock {
         }
     }
 
-    fn alloced_region(&self) -> *mut u8 {
-        self as *const AllocBlock as *mut u8
-    }
-
-    pub fn get_block<'a>(ptr: *const u8) -> &'a AllocBlock {
-        unsafe {
-            (ptr.sub(std::mem::size_of::<AllocBlock>()) as *const AllocBlock)
-                .as_ref()
-                .expect("Null ptr")
-        }
-    }
-
-    pub fn as_ptr(&self) -> *mut c_void {
+    fn as_ptr(&self) -> *mut c_void {
         self.ptr() as *mut c_void
     }
 
