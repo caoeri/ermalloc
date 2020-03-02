@@ -136,15 +136,14 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+fn setup_policy_helper(size: size_t, policies: *const ErPolicyListRaw) -> Option<[Policy; MAX_POLICIES]> {
     if size == 0 {
-        return ptr::null::<c_void>() as *mut c_void;
+        return None;
     }
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(*policies).expect("err");
+        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);
@@ -156,7 +155,15 @@ pub unsafe extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRa
             };
         }
     }
-    AllocBlock::new(size, &policy_arr, false).as_ptr().add(1) as *mut c_void
+    Some(policy_arr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
+    match setup_policy_helper(size, policies) {
+        Some(policy_arr) => AllocBlock::new(size, &policy_arr, false).as_ptr().add(1) as *mut c_void,
+        None => ptr::null::<c_void>() as *mut c_void
+    }
 }
 
 #[no_mangle]
@@ -167,44 +174,22 @@ pub unsafe extern "C" fn er_free(ptr: *const c_void)  {
 #[no_mangle]
 pub unsafe extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     let bytes: size_t = nmemb * size;
-    if size == 0 {
-        return ptr::null::<c_void>() as *mut c_void;
+    match setup_policy_helper(size, policies) {
+        Some(policy_arr) => AllocBlock::new(bytes, &policy_arr, true).as_ptr().add(1) as *mut c_void,
+        None => ptr::null::<c_void>() as *mut c_void
     }
-
-    let mut policy_arr = [Policy::Nil; MAX_POLICIES];
-    if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(*policies).expect("err");
-        for i in 0.. {
-            if i >= MAX_POLICIES {
-                panic!("{}", FfiError::MoreThanMaxPolicies);
-            }
-            policy_arr[i] = Policy::from(head);
-            head = match head.next() {
-                None => break,
-                Some(erplnn) => erplnn
-            };
-        }
-    }
-    AllocBlock::new(bytes, &policy_arr, true).as_ptr().add(1) as *mut c_void
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    let mut policy_arr = [Policy::Nil; MAX_POLICIES];
-    if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(*policies).expect("err");
-        for i in 0.. {
-            if i >= MAX_POLICIES {
-                panic!("{}", FfiError::MoreThanMaxPolicies);
-            }
-            policy_arr[i] = Policy::from(head);
-            head = match head.next() {
-                None => break,
-                Some(erplnn) => erplnn
-            };
-        }
+    if size == 0 {
+        er_free(ptr);
+        return ptr::null::<c_void>() as *mut c_void
     }
-    AllocBlock::renew(AllocBlock::from_usr_ptr_mut(ptr as *mut u8), size, &policy_arr).as_ptr().add(1) as *mut c_void
+    match setup_policy_helper(size, policies) {
+        Some(policy_arr) => AllocBlock::renew(AllocBlock::from_usr_ptr_mut(ptr as *mut u8), size, &policy_arr).as_ptr().add(1) as *mut c_void,
+        None => ptr::null::<c_void>() as *mut c_void
+    }
 }
 
 #[no_mangle]
