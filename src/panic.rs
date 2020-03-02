@@ -10,7 +10,9 @@ struct ErStderr;
 
 impl Write for ErStderr {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        libc::write(libc::STDERR_FILENO, s as *const str as *const libc::c_void, s.len());
+        unsafe {
+            libc::write(libc::STDERR_FILENO, s as *const str as *const libc::c_void, s.len());
+        }
         Ok(())
     }
 }
@@ -21,7 +23,7 @@ fn panic(info: &PanicInfo) -> ! {
 
     writeln!(host_stderr, "{}", info).ok();
 
-    libc::exit(1);
+    unsafe {libc::exit(1); }
 }
 
 #[lang = "eh_personality"] extern fn eh_personality() {}
