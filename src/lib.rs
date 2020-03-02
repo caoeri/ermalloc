@@ -5,7 +5,7 @@ mod policies;
 mod weak;
 mod ffi;
 mod alloc;
-mod er_panic;
+mod panic;
 
 #[cfg(test)]
 mod tests {
