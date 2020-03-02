@@ -8,7 +8,6 @@ use core::fmt;
 use core::slice;
 
 use crate::policies::*;
-use crate::weak::*;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
