@@ -1,10 +1,7 @@
-#![no_std]
-
 extern crate alloc;
 
 use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc, Layout};
 use core::convert::TryFrom;
-use core::ffi::c_void;
 use core::iter::Iterator;
 use core::mem::transmute;
 
@@ -45,19 +42,15 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
     }
     let data_len = buffer.len() / n_copies;
 
-    let copied_bytes: Vec<_> = (0..n_copies)
-        .map(|i| buffer[i * data_len + index])
-        .collect();
-
     // Count bits
     let mut corrected: u8 = 0;
     for bit in 0..8 {
         let mask = 1 << bit;
         let mut count: [u32; 2] = [0, 0];
 
-        for byte in copied_bytes.iter() {
+        (0..n_copies).map(|i| buffer[i * data_len + index]).for_each(|byte| {
             count[((byte & mask) >> bit) as usize] += 1;
-        }
+        });
 
         if count[0] < count[1] {
             corrected |= 1 << bit;
@@ -240,7 +233,7 @@ impl AllocBlock {
         let block_ptr = self as *const AllocBlock;
         unsafe {
             let block_ptr: *mut u8 = block_ptr as *mut u8;
-            block_ptr.add(std::mem::size_of::<AllocBlock>())
+            block_ptr.add(core::mem::size_of::<AllocBlock>())
         }
     }
 
@@ -264,7 +257,7 @@ impl AllocBlock {
         zeroed: bool,
     ) -> WeakMut<'a, AllocBlock> {
         let full_size: usize = AllocBlock::size_of(size, policies);
-        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
+        let res = Layout::from_size_align(full_size + core::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(layout) => {
@@ -299,7 +292,7 @@ impl AllocBlock {
     ) -> WeakMut<'a, AllocBlock> {
         let new_full_size = AllocBlock::size_of(new_size, new_policies);
         let new_res =
-            Layout::from_size_align(new_full_size + std::mem::size_of::<AllocBlock>(), 16);
+            Layout::from_size_align(new_full_size + core::mem::size_of::<AllocBlock>(), 16);
 
         match new_res {
             Ok(layout) => {
@@ -337,7 +330,7 @@ impl AllocBlock {
 
     fn drop_ref(&mut self) {
         let full_size: usize = AllocBlock::size_of(self.length, &self.policies);
-        let res = Layout::from_size_align(full_size + std::mem::size_of::<AllocBlock>(), 16);
+        let res = Layout::from_size_align(full_size + core::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(_val) => {
@@ -352,11 +345,11 @@ impl AllocBlock {
     }
 
     fn full_slice_mut(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
+        unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
     }
 
     fn full_slice(&self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
+        unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.full_size) }
     }
 
     pub fn data_slice_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> &mut [u8] {
@@ -366,7 +359,7 @@ impl AllocBlock {
     }
 
     fn data_slice(&self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.length) }
+        unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.length) }
     }
     
     pub fn correct_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
@@ -381,7 +374,7 @@ impl AllocBlock {
     }
 
     fn correct_bits_helper(&self, index: usize, full_buffer: &mut [u8]) -> u32 {
-        let corrected_bits = match (index == MAX_POLICIES) {
+        let corrected_bits = match index == MAX_POLICIES {
             true => return 0,
             false => match self.policies[index] {
                 Policy::Nil => return 0,
