@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(alloc_error_handler)]
 #![allow(dead_code)]
 
 mod policies;

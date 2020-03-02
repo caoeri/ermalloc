@@ -111,3 +111,8 @@ unsafe fn realloc_fallback(
     }
     new_ptr
 }
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: Layout) -> ! {
+    panic!("allocation error: {:?}", layout)
+}
