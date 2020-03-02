@@ -1,6 +1,6 @@
 extern crate core;
 
-use core::fmt::{Write, self};
+use core::fmt::Write;
 use core::panic::PanicInfo;
 
 use libc;
