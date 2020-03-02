@@ -1,10 +1,7 @@
-#![no_std]
-
 extern crate alloc;
 
 use alloc::alloc::{alloc, alloc_zeroed, dealloc, realloc, Layout};
 use core::convert::TryFrom;
-use core::ffi::c_void;
 use core::iter::Iterator;
 use core::mem::transmute;
 
@@ -12,7 +9,7 @@ use crate::weak::*;
 
 use reed_solomon::{Buffer, Decoder, Encoder};
 
-const MAX_POLICIES: usize = 3;
+pub const MAX_POLICIES: usize = 3;
 
 #[repr(u64)]
 #[derive(Copy, Clone)]
@@ -48,19 +45,15 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
     }
     let data_len = buffer.len() / n_copies;
 
-    let copied_bytes: Vec<_> = (0..n_copies)
-        .map(|i| buffer[i * data_len + index])
-        .collect();
-
     // Count bits
     let mut corrected: u8 = 0;
     for bit in 0..8 {
         let mask = 1 << bit;
         let mut count: [u32; 2] = [0, 0];
 
-        for byte in copied_bytes.iter() {
+        (0..n_copies).map(|i| buffer[i * data_len + index]).for_each(|byte| {
             count[((byte & mask) >> bit) as usize] += 1;
-        }
+        });
 
         if count[0] < count[1] {
             corrected |= 1 << bit;
@@ -219,7 +212,7 @@ impl Policy {
 /// we recursively treat the the buffer as data for the next policy. This is similar to the how network packets
 /// gain data as you move up the OSI layers or you acn think of it like an onion gradually wrapping around the data.
 #[repr(C)]
-struct AllocBlock {
+pub struct AllocBlock {
     /// Policies to be applied to the data.
     /// Policies are applied in reverse order from MAX_POLICIES - 1 to 0.
     policies: [Policy; MAX_POLICIES],
@@ -251,6 +244,11 @@ impl Weakable for AllocBlock {
 
 // #[cfg(light_weight)]
 impl AllocBlock {
+    /// Gets a pointer to the data bits and casts it to a FFI friendly manner
+    pub fn ptr_ffi<'a>(mut w: Weak<'a, AllocBlock>) -> *mut u8 {
+        w.get_ref().expect("ptr_ffi").ptr()
+    }
+
     /// Gets a pointer to the data bits
     /// 
     /// [AllocBlock Metadata | Data]
@@ -258,18 +256,13 @@ impl AllocBlock {
         let block_ptr = self as *const AllocBlock;
         unsafe {
             let block_ptr: *mut u8 = block_ptr as *mut u8;
-            block_ptr.add(std::mem::size_of::<AllocBlock>())
+            block_ptr.add(core::mem::size_of::<AllocBlock>())
         }
     }
 
-    /// Gets a pointer to the data bits and casts it to a FFI friendly manner
-    fn as_ptr(&self) -> *mut c_void {
-        self.ptr() as *mut c_void
-    }
-
     /// Computes the total buffer size if the data length was used and given policies were applied. 
-    fn size_of(data_length: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
-        let mut buffer_size = data_length;
+    fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
+        let mut buffer_size = desired_size;
         for p in policies.iter().rev() {
             match p {
                 Policy::Redundancy(num_copies) => {
@@ -288,7 +281,7 @@ impl AllocBlock {
         zeroed: bool,
     ) -> WeakMut<'a, AllocBlock> {
         let buffer_size: usize = AllocBlock::size_of(size, policies);
-        let res = Layout::from_size_align(buffer_size + std::mem::size_of::<AllocBlock>(), 16);
+        let res = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(layout) => {
@@ -317,13 +310,13 @@ impl AllocBlock {
     }
 
     pub fn renew<'a>(
-        mut w: WeakMut<'a, AllocBlock>,
+        w: WeakMut<'a, AllocBlock>,
         new_size: usize,
         new_policies: &[Policy; MAX_POLICIES],
     ) -> WeakMut<'a, AllocBlock> {
         let new_buffer_size = AllocBlock::size_of(new_size, new_policies);
         let new_res =
-            Layout::from_size_align(new_buffer_size + std::mem::size_of::<AllocBlock>(), 16);
+            Layout::from_size_align(new_buffer_size + core::mem::size_of::<AllocBlock>(), 16);
 
         match new_res {
             Ok(layout) => {
@@ -353,7 +346,7 @@ impl AllocBlock {
         WeakMut::from(block)
     }
 
-    pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
+    pub fn drop<'a>(w: WeakMut<'a, AllocBlock>) {
         w.get_ref_mut()
             .expect("Called drop on invalid WeakMut")
             .drop_ref();
@@ -361,7 +354,7 @@ impl AllocBlock {
 
     fn drop_ref(&mut self) {
         let buffer_size: usize = AllocBlock::size_of(self.length, &self.policies);
-        let res = Layout::from_size_align(buffer_size + std::mem::size_of::<AllocBlock>(), 16);
+        let res = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16);
 
         match res {
             Ok(_val) => {
@@ -376,19 +369,35 @@ impl AllocBlock {
     }
 
     /// Gets a slice the represents the total data + error correct bytes that were allocated. (This should only be used internally)
-    unsafe fn buffer(&self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.buffer_size) }
+    fn buffer(&self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.buffer_size) }
+    }
+    
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.buffer_size) }
+    }
+
+    pub fn data_slice_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> &mut [u8] {
+        w.get_ref_mut()
+            .expect("data_slice_ffi")
+            .buffer_mut()
     }
 
     /// Gets a slice representing the bytes that the user wanted
     fn data_slice(&self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.ptr(), self.length) }
+        unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.length) }
+    }
+    
+    pub fn correct_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
+        w.get_ref_mut()
+            .expect("correct_buffer_ffi")
+            .correct_buffer()
     }
 
     /// The public function used to correct the buffer from potential SEU events. This should be used before
     /// any read operations.
     fn correct_buffer(&mut self) -> u32 {
-        let buffer = unsafe { self.buffer() };
+        let buffer = self.buffer();
         self.correct_bits_helper(0, buffer)
     }
 
@@ -396,7 +405,7 @@ impl AllocBlock {
     /// Note that this function is more expensive than is corrupted since it corrects for every branch
     /// of the redundancy.
     fn correct_bits_helper(&self, index: usize, full_buffer: &mut [u8]) -> u32 {
-        let corrected_bits = match (index == MAX_POLICIES) {
+        let corrected_bits = match index == MAX_POLICIES {
             true => return 0,
             false => match self.policies[index] {
                 Policy::Nil => return 0,
@@ -422,7 +431,7 @@ impl AllocBlock {
     /// Determines if the buffer is corrupted. When possible, use this function as opposed to correct_buffer since
     /// this function is cheaper.
     fn is_corrupted(&self) -> bool {
-        let buffer = unsafe { self.buffer() };
+        let buffer = self.buffer();
         self.is_corrupted_helper(0, buffer)
     }
 
@@ -444,10 +453,16 @@ impl AllocBlock {
     /// data in the first data_length bits are correct.
     /// This should be used after any write operations to provide error protection against those bits.
     fn apply_policy(&self) {
-        let buffer = unsafe { self.buffer() };
-        self.apply_policy_helper(0, buffer)
+        let buffer = self.buffer();
+        self.apply_policy_helper(0, buffer);
     }
-
+    
+    pub fn apply_policy_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
+        w.downgrade()
+            .get_ref()
+            .expect("apply policy ffi")
+            .apply_policy();
+    }
 
     /// Helper function that applies the policy at the given index.
     fn apply_policy_helper(&self, index: usize, full_buffer: &mut [u8]) {
