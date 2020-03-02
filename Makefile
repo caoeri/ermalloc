@@ -5,7 +5,7 @@ build: build-c
 
 .PHONY: build-rust
 build-rust:
-	$(CARGO_BIN) build
+	$(CARGO_BIN) +nightly build
 
 build-ermalloc_c: src/ermalloc.c src/ermalloc.h
 	mkdir -p build
