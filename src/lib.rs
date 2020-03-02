@@ -4,6 +4,7 @@
 mod policies;
 mod weak;
 mod ffi;
+mod alloc;
 
 #[cfg(test)]
 mod tests {
