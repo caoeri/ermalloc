@@ -144,7 +144,7 @@ pub unsafe extern "C" fn er_malloc(size: size_t, policies: *const ErPolicyListRa
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        let mut head = ErPolicyListNonNull::try_from(*policies).expect("err");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        let mut head = ErPolicyListNonNull::try_from(*policies).expect("err");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const
 pub unsafe extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        let mut head = ErPolicyListNonNull::try_from(*policies).expect("err");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);

@@ -8,7 +8,7 @@ use libc;
 pub struct ErAlloc;
 
 #[global_allocator]
-static Allocator: ErAlloc = ErAlloc {};
+static ALLOCATOR: ErAlloc = ErAlloc {};
 
 // The minimum alignment guaranteed by the architecture. This value is used to
 // add fast paths for low alignment values.

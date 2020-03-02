@@ -93,7 +93,7 @@ impl<'a, T> WeakMut<'a, T> where T: Weakable {
         WeakMut::from(r)
     }
 
-    pub unsafe fn as_ptr(mut self) -> *mut T {
+    pub unsafe fn as_ptr(self) -> *mut T {
         match self.get_ref_mut() {
             Some(r) => {
                 r.reset_weak_exists();
@@ -110,7 +110,7 @@ impl<'a, T> WeakMut<'a, T> where T: Weakable {
         self.weak
     }
 
-    pub fn downgrade(mut self) -> Weak<'a, T> {
+    pub fn downgrade(self) -> Weak<'a, T> {
         match self.get_ref_mut() {
             Some(r) => unsafe {
                 Weak::from(& *(r as *mut T as *const T))

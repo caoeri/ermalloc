@@ -286,7 +286,7 @@ impl AllocBlock {
     }
 
     pub fn renew<'a>(
-        mut w: WeakMut<'a, AllocBlock>,
+        w: WeakMut<'a, AllocBlock>,
         new_size: usize,
         new_policies: &[Policy; MAX_POLICIES],
     ) -> WeakMut<'a, AllocBlock> {
@@ -322,7 +322,7 @@ impl AllocBlock {
         WeakMut::from(block)
     }
 
-    pub fn drop<'a>(mut w: WeakMut<'a, AllocBlock>) {
+    pub fn drop<'a>(w: WeakMut<'a, AllocBlock>) {
         w.get_ref_mut()
             .expect("Called drop on invalid WeakMut")
             .drop_ref();
@@ -369,7 +369,7 @@ impl AllocBlock {
     }
 
     fn correct_buffer(&mut self) -> u32 {
-        let buffer = unsafe { self.full_slice() };
+        let buffer = self.full_slice();
         self.correct_bits_helper(0, buffer)
     }
 
@@ -398,7 +398,7 @@ impl AllocBlock {
     }
 
     fn is_corrupted(&self) -> bool {
-        let buffer = unsafe { self.full_slice() };
+        let buffer = self.full_slice();
         self.is_corrupted_helper(0, buffer)
     }
 
@@ -424,7 +424,7 @@ impl AllocBlock {
     }
 
     fn apply_policy(&self) {
-        let buffer = unsafe { self.full_slice() };
+        let buffer = self.full_slice();
         self.apply_policy_helper(0, buffer)
     }
 
