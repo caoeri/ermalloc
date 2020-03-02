@@ -23,3 +23,6 @@ fn panic(info: &PanicInfo) -> ! {
 
     libc::exit(1);
 }
+
+#[lang = "eh_personality"] extern fn eh_personality() {}
+
