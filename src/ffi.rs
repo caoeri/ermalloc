@@ -216,7 +216,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
         return c;
     }
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1;
+    let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let dst_buf = slice::from_raw_parts_mut(dest as *mut u8, len);
     dst_buf.copy_from_slice(src_buf);
     c
@@ -225,7 +225,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
 #[no_mangle]
 pub unsafe extern "C" fn er_write_buf(base: *mut c_void, src: *const c_void, offset: size_t, len: size_t) -> c_int {
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let dst_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1;
+    let dst_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let src_buf = slice::from_raw_parts_mut(src as *mut u8, len);
     dst_buf.copy_from_slice(src_buf);
     0
