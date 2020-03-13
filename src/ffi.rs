@@ -206,7 +206,10 @@ pub unsafe extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: 
 
 #[no_mangle]
 pub unsafe extern "C" fn er_reallocarray(ptr: *const c_void, nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    ptr::null::<c_void>() as *mut c_void
+    match nmemb.checked_mul(size) {
+        Some(b) => er_realloc(ptr, b, policies),
+        None => ptr::null::<c_void>() as *mut c_void
+    }
 }
 
 #[no_mangle]
