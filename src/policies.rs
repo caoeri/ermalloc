@@ -7,7 +7,7 @@ use core::mem::transmute;
 
 use crate::weak::*;
 
-use reed_solomon::{Buffer, Decoder, Encoder};
+use reed_solomon::{Decoder, Encoder};
 
 pub const MAX_POLICIES: usize = 3;
 
@@ -51,9 +51,11 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
         let mask = 1 << bit;
         let mut count: [u32; 2] = [0, 0];
 
-        (0..n_copies).map(|i| buffer[i * data_len + index]).for_each(|byte| {
-            count[((byte & mask) >> bit) as usize] += 1;
-        });
+        (0..n_copies)
+            .map(|i| buffer[i * data_len + index])
+            .for_each(|byte| {
+                count[((byte & mask) >> bit) as usize] += 1;
+            });
 
         if count[0] < count[1] {
             corrected |= 1 << bit;
@@ -141,7 +143,7 @@ impl Policy {
 
     /// If any errors are present in the buffer, this will correct them and report the total number of errors.
     /// You should do this before read operations in order to potentially correct any bits that have been corrupted.
-    /// 
+    ///
     /// Pre-conditions:
     /// - This is intended to be used after apply_policy has been done.
     fn correct_buffer(&self, buffer: &mut [u8]) -> u32 {
@@ -164,7 +166,6 @@ impl Policy {
             _ => 0,
         }
     }
-
 
     /// Applies the policy on the given data. This assumes that the data in the data_slice is correct.
     /// This is used to setup the data and after write operations in order to secure the data from
@@ -207,8 +208,8 @@ impl Policy {
 }
 
 /// Metadata that is adjacent to the actual data stored.
-/// 
-/// Since each policy sees data as a combination of data and metadata (combined these for the Buffer/codeword), 
+///
+/// Since each policy sees data as a combination of data and metadata (combined these for the Buffer/codeword),
 /// we recursively treat the the buffer as data for the next policy. This is similar to the how network packets
 /// gain data as you move up the OSI layers or you acn think of it like an onion gradually wrapping around the data.
 #[repr(C)]
@@ -250,7 +251,7 @@ impl AllocBlock {
     }
 
     /// Gets a pointer to the data bits
-    /// 
+    ///
     /// [AllocBlock Metadata | Data]
     fn ptr(&self) -> *mut u8 {
         let block_ptr = self as *const AllocBlock;
@@ -260,7 +261,7 @@ impl AllocBlock {
         }
     }
 
-    /// Computes the total buffer size if the data length was used and given policies were applied. 
+    /// Computes the total buffer size if the data length was used and given policies were applied.
     fn size_of(desired_size: usize, policies: &[Policy; MAX_POLICIES]) -> usize {
         let mut buffer_size = desired_size;
         for p in policies.iter().rev() {
@@ -281,32 +282,27 @@ impl AllocBlock {
         zeroed: bool,
     ) -> WeakMut<'a, AllocBlock> {
         let buffer_size: usize = AllocBlock::size_of(size, policies);
-        let res = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16);
+        let layout = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
 
-        match res {
-            Ok(layout) => {
-                let block_ptr: *mut u8 = unsafe {
-                    if zeroed {
-                        alloc_zeroed(layout)
-                    } else {
-                        alloc(layout)
-                    }
-                };
-                let block: &'a mut AllocBlock;
-
-                block = unsafe { &mut *(block_ptr as *mut AllocBlock) };
-                block.buffer_size = buffer_size;
-                block.length = size;
-                block.policies = *policies;
-                block.weak_exists = false;
-
-                if zeroed {
-                    block.apply_policy();
-                }
-                WeakMut::from(block)
+        let block_ptr: *mut u8 = unsafe {
+            if zeroed {
+                alloc_zeroed(layout)
+            } else {
+                alloc(layout)
             }
-            Err(_e) => panic!("Invalid layout arguments"),
+        };
+        let block: &'a mut AllocBlock;
+
+        block = unsafe { &mut *(block_ptr as *mut AllocBlock) };
+        block.buffer_size = buffer_size;
+        block.length = size;
+        block.policies = *policies;
+        block.weak_exists = false;
+
+        if zeroed {
+            block.apply_policy();
         }
+        WeakMut::from(block)
     }
 
     pub fn renew<'a>(
@@ -315,25 +311,20 @@ impl AllocBlock {
         new_policies: &[Policy; MAX_POLICIES],
     ) -> WeakMut<'a, AllocBlock> {
         let new_buffer_size = AllocBlock::size_of(new_size, new_policies);
-        let new_res =
-            Layout::from_size_align(new_buffer_size + core::mem::size_of::<AllocBlock>(), 16);
+        let layout =
+            Layout::from_size_align(new_buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
 
-        match new_res {
-            Ok(layout) => {
-                let new_block_ptr = unsafe { realloc(w.as_ptr() as *mut u8, layout, new_size) };
+        let new_block_ptr = unsafe { realloc(w.as_ptr() as *mut u8, layout, new_size) };
 
-                let new_block: &'a mut AllocBlock;
+        let new_block: &'a mut AllocBlock;
 
-                new_block = unsafe { &mut *(new_block_ptr as *mut AllocBlock) };
-                new_block.buffer_size = new_buffer_size;
-                new_block.length = new_size;
-                new_block.policies = *new_policies;
-                new_block.weak_exists = false;
-                new_block.apply_policy();
-                WeakMut::from(new_block)
-            }
-            Err(_e) => panic!("Invalid layout arguments"),
-        }
+        new_block = unsafe { &mut *(new_block_ptr as *mut AllocBlock) };
+        new_block.buffer_size = new_buffer_size;
+        new_block.length = new_size;
+        new_block.policies = *new_policies;
+        new_block.weak_exists = false;
+        new_block.apply_policy();
+        WeakMut::from(new_block)
     }
 
     pub fn from_usr_ptr<'a>(ptr: *const u8) -> Weak<'a, AllocBlock> {
@@ -354,40 +345,30 @@ impl AllocBlock {
 
     fn drop_ref(&mut self) {
         let buffer_size: usize = AllocBlock::size_of(self.length, &self.policies);
-        let res = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16);
+        let layout = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
 
-        match res {
-            Ok(_val) => {
-                let layout = res.unwrap();
-                unsafe {
-                    let ptr: *mut u8 = transmute(self as *mut AllocBlock);
-                    dealloc(ptr, layout)
-                };
-            }
-            Err(_e) => panic!("Invalid layout arguments"),
-        }
+        unsafe {
+            let ptr: *mut u8 = transmute(self as *mut AllocBlock);
+            dealloc(ptr, layout)
+        };
     }
 
     /// Gets a slice the represents the total data + error correct bytes that were allocated. (This should only be used internally)
     fn buffer(&self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.buffer_size) }
     }
-    
     fn buffer_mut(&mut self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.buffer_size) }
     }
 
     pub fn data_slice_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> &mut [u8] {
-        w.get_ref_mut()
-            .expect("data_slice_ffi")
-            .buffer_mut()
+        w.get_ref_mut().expect("data_slice_ffi").buffer_mut()
     }
 
     /// Gets a slice representing the bytes that the user wanted
     fn data_slice(&self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.ptr(), self.length) }
     }
-    
     pub fn correct_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
         w.get_ref_mut()
             .expect("correct_buffer_ffi")
@@ -456,7 +437,6 @@ impl AllocBlock {
         let buffer = self.buffer();
         self.apply_policy_helper(0, buffer);
     }
-    
     pub fn apply_policy_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
         w.downgrade()
             .get_ref()
@@ -529,5 +509,4 @@ mod tests {
         let slice = unsafe { block_ref.buffer() };
         assert_eq!(slice[0], 0b1111 as u8);
     }
-
 }
