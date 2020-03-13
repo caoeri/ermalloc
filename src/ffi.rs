@@ -14,6 +14,7 @@ use crate::policies::*;
 pub enum ErPolicyRaw {
     Nil,
     Redundancy,
+    ReedSolomon,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -93,15 +94,23 @@ impl Iterator for ErPolicyListNonNull {
 impl From<ErPolicyListNonNull> for Policy {
     fn from(raw: ErPolicyListNonNull) -> Self {
         match raw.policy {
-        ErPolicyRaw::Nil => Policy::Nil,
-        ErPolicyRaw::Redundancy => {
-            let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
-            let num;
-            unsafe {
-                num = *(ptr.as_ptr());
-            }
-            Policy::Redundancy(num)
-        },
+            ErPolicyRaw::Nil => Policy::Nil,
+            ErPolicyRaw::Redundancy => {
+                let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
+                let num;
+                unsafe {
+                    num = *(ptr.as_ptr());
+                }
+                Policy::Redundancy(num)
+            },
+            ErPolicyRaw::ReedSolomon => {
+                let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
+                let num;
+                unsafe {
+                    num = *(ptr.as_ptr());
+                }
+                Policy::ReedSolomon(num)
+            },
         }
     }
 }
@@ -121,8 +130,8 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
         match raw.policy {
             ErPolicyRaw::Nil => {
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
-            }
-            ErPolicyRaw::Redundancy => {
+            },
+            ErPolicyRaw::Redundancy | ErPolicyRaw::ReedSolomon => {
                 if raw.policy_data.is_null() {
                     Err(FfiError::PolicyDataWasNull)
                 } else {
@@ -173,7 +182,10 @@ pub unsafe extern "C" fn er_free(ptr: *const c_void)  {
 
 #[no_mangle]
 pub unsafe extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    let bytes: size_t = nmemb * size;
+    let bytes: size_t = match nmemb.checked_mul(size) {
+        Some(u) => u,
+        None => return ptr::null::<c_void>() as *mut c_void
+    };
     match setup_policy_helper(size, policies) {
         Some(policy_arr) => AllocBlock::new(bytes, &policy_arr, true).as_ptr().add(1) as *mut c_void,
         None => ptr::null::<c_void>() as *mut c_void
@@ -194,7 +206,10 @@ pub unsafe extern "C" fn er_realloc(ptr: *const c_void, size: size_t, policies: 
 
 #[no_mangle]
 pub unsafe extern "C" fn er_reallocarray(ptr: *const c_void, nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    ptr::null::<c_void>() as *mut c_void
+    match nmemb.checked_mul(size) {
+        Some(b) => er_realloc(ptr, b, policies),
+        None => ptr::null::<c_void>() as *mut c_void
+    }
 }
 
 #[no_mangle]
@@ -216,7 +231,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
         return c;
     }
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1;
+    let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let dst_buf = slice::from_raw_parts_mut(dest as *mut u8, len);
     dst_buf.copy_from_slice(src_buf);
     c
@@ -225,7 +240,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
 #[no_mangle]
 pub unsafe extern "C" fn er_write_buf(base: *mut c_void, src: *const c_void, offset: size_t, len: size_t) -> c_int {
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let dst_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1;
+    let dst_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let src_buf = slice::from_raw_parts_mut(src as *mut u8, len);
     dst_buf.copy_from_slice(src_buf);
     0
