@@ -14,6 +14,7 @@ use crate::policies::*;
 pub enum ErPolicyRaw {
     Nil,
     Redundancy,
+    ReedSolomon,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -93,15 +94,23 @@ impl Iterator for ErPolicyListNonNull {
 impl From<ErPolicyListNonNull> for Policy {
     fn from(raw: ErPolicyListNonNull) -> Self {
         match raw.policy {
-        ErPolicyRaw::Nil => Policy::Nil,
-        ErPolicyRaw::Redundancy => {
-            let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
-            let num;
-            unsafe {
-                num = *(ptr.as_ptr());
-            }
-            Policy::Redundancy(num)
-        },
+            ErPolicyRaw::Nil => Policy::Nil,
+            ErPolicyRaw::Redundancy => {
+                let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
+                let num;
+                unsafe {
+                    num = *(ptr.as_ptr());
+                }
+                Policy::Redundancy(num)
+            },
+            ErPolicyRaw::ReedSolomon => {
+                let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
+                let num;
+                unsafe {
+                    num = *(ptr.as_ptr());
+                }
+                Policy::ReedSolomon(num)
+            },
         }
     }
 }
@@ -121,8 +130,8 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
         match raw.policy {
             ErPolicyRaw::Nil => {
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
-            }
-            ErPolicyRaw::Redundancy => {
+            },
+            ErPolicyRaw::Redundancy | ErPolicyRaw::ReedSolomon => {
                 if raw.policy_data.is_null() {
                     Err(FfiError::PolicyDataWasNull)
                 } else {
@@ -173,7 +182,10 @@ pub unsafe extern "C" fn er_free(ptr: *const c_void)  {
 
 #[no_mangle]
 pub unsafe extern "C" fn er_calloc(nmemb: size_t, size: size_t, policies: *const ErPolicyListRaw) -> *mut c_void {
-    let bytes: size_t = nmemb * size;
+    let bytes: size_t = match nmemb.checked_mul(size) {
+        Some(u) => u,
+        None => return ptr::null::<c_void>() as *mut c_void
+    };
     match setup_policy_helper(size, policies) {
         Some(policy_arr) => AllocBlock::new(bytes, &policy_arr, true).as_ptr().add(1) as *mut c_void,
         None => ptr::null::<c_void>() as *mut c_void
