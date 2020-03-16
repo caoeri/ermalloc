@@ -58,9 +58,63 @@ void redundant_test(void)
     END_FUNC;
 }
 
+void rs_test(void) {
+
+    START_FUNC;
+
+    struct er_policy_list p = {
+        .policy = ReedSolomon,
+        .policy_data = &(int){3},
+        .next_policy = NULL
+    };
+
+    int* x = er_malloc(sizeof(int), &p);
+    x[0] = 0b1010;
+    er_setup_policies(x);
+    printf("x[0] = %d\n", x[0]);
+    x[0] = 0b1011;
+    printf("x[0] = %d\n", x[0]);
+    int r = er_correct_buffer(x);
+    printf("x[0] = %d\n", x[0]);
+
+
+    END_FUNC;
+}
+
+void rs_and_redundant_test(void) {
+
+    START_FUNC;
+
+    struct er_policy_list p = {
+        .policy = ReedSolomon,
+        .policy_data = &(int){3},
+        .next_policy = NULL
+    };
+
+    struct er_policy_list p2 = {
+        .policy = Redundancy,
+        .policy_data = &(int){3},
+        .next_policy = &p
+    };
+
+    int* x = er_malloc(sizeof(int), &p);
+    x[0] = 0b1010;
+    er_setup_policies(x);
+    printf("x[0] = %d\n", x[0]);
+    x[0] = 0b1011;
+    printf("x[0] = %d\n", x[0]);
+    int r = er_correct_buffer(x);
+    printf("x[0] = %d\n", x[0]);
+
+    END_FUNC;
+
+}
+
 int main(void)
 {
     malloc_free_test();
     redundant_test();
+    rs_test();
+    rs_and_redundant_test();
     return 0;
 }
