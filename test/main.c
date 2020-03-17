@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "ermalloc.h"
 
@@ -110,11 +111,32 @@ void rs_and_redundant_test(void) {
 
 }
 
+void encryption_test(void) {
+
+    START_FUNC;
+
+    struct er_policy_list p = {
+        .policy = Encrypted,
+        .policy_data = NULL,
+        .next_policy = NULL
+    };
+
+    const char* data = "contagion";
+    char* x = er_malloc(strlen(data) + 1, NULL);
+    strcpy(x, data);
+
+    er_setup_policies(x);
+    
+    END_FUNC;
+
+}
+
 int main(void)
 {
     malloc_free_test();
     redundant_test();
     rs_test();
     rs_and_redundant_test();
+    encryption_test();
     return 0;
 }

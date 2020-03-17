@@ -18,6 +18,7 @@ pub enum Policy {
     // The u32 here represents the total number of copies including the original data
     Redundancy(u32),
     ReedSolomon(u32),
+    Encrypted,
     // Custom, // TODO: Make ths a function to arbitrary data
 }
 
@@ -167,6 +168,29 @@ impl Policy {
         }
     }
 
+    fn encrypt_buffer(&self, buffer: &mut [u8]) -> u32 {
+        match self {
+            Policy::Encrypted => {
+                // encrypt buffer
+                // prepare to send to encrypt(data) and get iv+data
+                0
+            }
+            _ => 0,
+        }
+    }
+
+    fn decrypt_buffer(&self, buffer: &mut [u8]) -> u32 {
+        match self {
+            Policy::Encrypted => {
+                // decrypt buffer
+                // split up data and iv
+                // prepare to send to decrypt(data, iv)
+                0
+            }
+            _ => 0,
+        }
+    }
+
     /// Applies the policy on the given data. This assumes that the data in the data_slice is correct.
     /// This is used to setup the data and after write operations in order to secure the data from
     /// bitflips.
@@ -187,6 +211,9 @@ impl Policy {
                 let (data, err) = self.split_buffer_mut(buffer);
                 let encoded = enc.encode(data);
                 err.copy_from_slice(encoded.ecc());
+            }
+            Policy::Encrypted => {
+                // similar to encrypt buffer, maybe we can call it
             }
             _ => (),
         }
@@ -270,6 +297,10 @@ impl AllocBlock {
                     buffer_size *= usize::try_from(*num_copies).unwrap()
                 }
                 Policy::ReedSolomon(n_ecc) => buffer_size += usize::try_from(*n_ecc).unwrap(),
+                Policy::Encrypted => {
+                    // calculate lenght of iv + ciphertext
+                    // iv is a constant, ciphertext is length of the data
+                }
                 _ => (),
             }
         }
@@ -373,6 +404,30 @@ impl AllocBlock {
         w.get_ref_mut()
             .expect("correct_buffer_ffi")
             .correct_buffer()
+    }
+
+    pub fn encrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
+        w.get_ref_mut()
+            .expect("encrypt_buffer_ffi")
+            .encrypt_buffer()
+    }
+
+    pub fn decrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
+        w.get_ref_mut()
+            .expect("decrypt_buffer_ffi")
+            .decrypt_buffer()
+    }
+
+    fn encrypt_buffer(&mut self) -> u32 {
+        let buffer = self.buffer();
+        // TODO: figure out if this is even necessary, 
+        // or if we can get away with only policy impl
+        0
+    }
+
+    fn decrypt_buffer(&mut self) -> u32 {
+        let buffer = self.buffer();
+        0
     }
 
     /// The public function used to correct the buffer from potential SEU events. This should be used before

@@ -225,11 +225,30 @@ pub unsafe extern "C" fn er_correct_buffer(ptr: *mut c_void) -> c_int {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn er_encrypt_buffer(ptr: *mut c_void) -> c_int {
+    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
+    AllocBlock::encrypt_buffer_ffi(w) as c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn er_decrypt_buffer(ptr: *mut c_void) -> c_int {
+    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
+    AllocBlock::decrypt_buffer_ffi(w) as c_int
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offset: size_t, len: size_t) -> c_int {
     let c = er_correct_buffer(base);
     if c < 0 {
         return c;
     }
+
+    // TODO: which error to return?
+    let e = er_decrypt_buffer(base);
+    if e < 0 {
+        return e;
+    }
+    
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
     let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let dst_buf = slice::from_raw_parts_mut(dest as *mut u8, len);
@@ -239,6 +258,13 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
 
 #[no_mangle]
 pub unsafe extern "C" fn er_write_buf(base: *mut c_void, src: *const c_void, offset: size_t, len: size_t) -> c_int {
+    let c = er_encrypt_buffer(base);
+    if c < 0 {
+        return c;
+    }
+
+    // TODO: shouldn't there be updates to the buffer on writes? 
+
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
     let dst_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let src_buf = slice::from_raw_parts_mut(src as *mut u8, len);
