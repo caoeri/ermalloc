@@ -121,12 +121,13 @@ void encryption_test(void) {
         .next_policy = NULL
     };
 
-    const char* data = "contagion";
-    char* x = er_malloc(strlen(data) + 1, NULL);
-    strcpy(x, data);
-
+    int* x = er_malloc(7*sizeof(int), &p);
+    for (int i = 0; i < 7; i++) {
+        x[i] = i+1;
+    }
     er_setup_policies(x);
-    
+
+
     END_FUNC;
 
 }

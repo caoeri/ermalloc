@@ -15,6 +15,7 @@ pub enum ErPolicyRaw {
     Nil,
     Redundancy,
     ReedSolomon,
+    Encrypted,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -111,6 +112,7 @@ impl From<ErPolicyListNonNull> for Policy {
                 }
                 Policy::ReedSolomon(num)
             },
+            ErPolicyRaw::Encrypted => Policy::Encrypted
         }
     }
 }
@@ -128,7 +130,7 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
             }
         }
         match raw.policy {
-            ErPolicyRaw::Nil => {
+            ErPolicyRaw::Nil | ErPolicyRaw::Encrypted => {
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
             },
             ErPolicyRaw::Redundancy | ErPolicyRaw::ReedSolomon => {
@@ -152,7 +154,7 @@ fn setup_policy_helper(size: size_t, policies: *const ErPolicyListRaw) -> Option
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("policy list generation error");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);

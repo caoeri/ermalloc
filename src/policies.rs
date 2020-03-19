@@ -9,7 +9,19 @@ use crate::weak::*;
 
 use reed_solomon::{Decoder, Encoder};
 
+use aes_ctr::Aes128Ctr;
+use aes_ctr::stream_cipher::generic_array::GenericArray;
+use aes_ctr::stream_cipher::{
+    NewStreamCipher, SyncStreamCipher
+};
+// use rand_core::RngCore;
+
 pub const MAX_POLICIES: usize = 3;
+
+// AES-CTR mode with 128 bit key and 128 bit nonce
+const KEY_LEN: usize = 16;
+const NONCE_LEN: usize = 16;
+static KEY: &'static [u8] = b"very secret key.";
 
 #[repr(u64)]
 #[derive(Copy, Clone)]
@@ -92,6 +104,13 @@ impl Policy {
                 let data_len = len - (*n_ecc as usize);
                 buffer.split_at_mut(data_len)
             }
+            Policy::Encrypted => {
+                if len <= NONCE_LEN {
+                    panic!("Encryption: The number of ciphertext bits plus the number of nonce bits is too small");
+                }
+                let data_len = len - NONCE_LEN;
+                buffer.split_at_mut(data_len)
+            }
             _ => buffer.split_at_mut(buffer.len() - 1),
         }
     }
@@ -111,6 +130,13 @@ impl Policy {
                     panic!("Reed-Solomon: The number of data bits plus the amount of error correction bits is too small");
                 }
                 let data_len = len - (*n_ecc as usize);
+                buffer.split_at(data_len)
+            }
+            Policy::Encrypted => {
+                if len <= NONCE_LEN {
+                    panic!("Encryption: The number of ciphertext bits plus the number of nonce bits is too small");
+                }
+                let data_len = len - NONCE_LEN;
                 buffer.split_at(data_len)
             }
             _ => buffer.split_at(buffer.len() - 1),
@@ -213,7 +239,14 @@ impl Policy {
                 err.copy_from_slice(encoded.ecc());
             }
             Policy::Encrypted => {
-                // similar to encrypt buffer, maybe we can call it
+                let key = GenericArray::from_slice(KEY);
+                // let random_bytes = rand::thread_rng().gen::<[u8; NONCE_LEN]>();
+                // let nonce = GenericArray::from_slice(&random_bytes);
+                let nonce = GenericArray::from_slice(KEY);
+                let mut cipher = Aes128Ctr::new(&key, &nonce);
+                let (mut data, err) = self.split_buffer_mut(buffer); 
+                cipher.apply_keystream(&mut data);
+                err.copy_from_slice(KEY);
             }
             _ => (),
         }
@@ -298,8 +331,8 @@ impl AllocBlock {
                 }
                 Policy::ReedSolomon(n_ecc) => buffer_size += usize::try_from(*n_ecc).unwrap(),
                 Policy::Encrypted => {
-                    // calculate lenght of iv + ciphertext
-                    // iv is a constant, ciphertext is length of the data
+                    // nonce and ciphertext are stored together
+                    buffer_size += NONCE_LEN
                 }
                 _ => (),
             }
