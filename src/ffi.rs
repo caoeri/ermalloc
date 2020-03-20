@@ -227,18 +227,6 @@ pub unsafe extern "C" fn er_correct_buffer(ptr: *mut c_void) -> c_int {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn er_encrypt_buffer(ptr: *mut c_void) -> c_int {
-    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
-    AllocBlock::encrypt_buffer_ffi(w) as c_int
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn er_decrypt_buffer(ptr: *mut c_void) -> c_int {
-    let w = AllocBlock::from_usr_ptr_mut(ptr as *mut u8);
-    AllocBlock::decrypt_buffer_ffi(w) as c_int
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offset: size_t, len: size_t) -> c_int {
     let c = er_correct_buffer(base);
     if c < 0 {
@@ -246,7 +234,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
     }
 
     // TODO: which error to return?
-    let e = er_decrypt_buffer(base);
+    let e = AllocBlock::er_decrypt_buffer(base);
     if e < 0 {
         return e;
     }

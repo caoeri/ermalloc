@@ -14,7 +14,6 @@ use aes_ctr::stream_cipher::generic_array::GenericArray;
 use aes_ctr::stream_cipher::{
     NewStreamCipher, SyncStreamCipher
 };
-// use rand_core::RngCore;
 
 pub const MAX_POLICIES: usize = 3;
 
@@ -22,6 +21,8 @@ pub const MAX_POLICIES: usize = 3;
 const KEY_LEN: usize = 16;
 const NONCE_LEN: usize = 16;
 static KEY: &'static [u8] = b"very secret key.";
+// TODO: use real rng to generate the nonce (hard to do without std)
+static NONCE: &'static [u8] = b"and secret nonce";
 
 #[repr(u64)]
 #[derive(Copy, Clone)]
@@ -242,11 +243,11 @@ impl Policy {
                 let key = GenericArray::from_slice(KEY);
                 // let random_bytes = rand::thread_rng().gen::<[u8; NONCE_LEN]>();
                 // let nonce = GenericArray::from_slice(&random_bytes);
-                let nonce = GenericArray::from_slice(KEY);
+                let nonce = GenericArray::from_slice(NONCE);
                 let mut cipher = Aes128Ctr::new(&key, &nonce);
                 let (mut data, err) = self.split_buffer_mut(buffer); 
                 cipher.apply_keystream(&mut data);
-                err.copy_from_slice(KEY);
+                err.copy_from_slice(NONCE);
             }
             _ => (),
         }

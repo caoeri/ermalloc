@@ -77,6 +77,10 @@ void rs_test(void) {
     printf("x[0] = %d\n", x[0]);
     int r = er_correct_buffer(x);
     printf("x[0] = %d\n", x[0]);
+    int x2 = 0;
+    x[0] = 0b1011;
+    r = er_read_buf(x, &x2, 0, sizeof(int));
+    printf("x[0] = %d\n", x[0]);
 
 
     END_FUNC;
