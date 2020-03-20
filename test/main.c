@@ -81,6 +81,9 @@ void rs_test(void) {
     x[0] = 0b1011;
     r = er_read_buf(x, &x2, 0, sizeof(int));
     printf("x[0] = %d\n", x[0]);
+    int x3 = 5;
+    er_write_buf(x, &x3, 0, sizeof(int));
+    printf("x[0] = %d\n", x[0]);
 
 
     END_FUNC;
@@ -129,8 +132,28 @@ void encryption_test(void) {
     for (int i = 0; i < 7; i++) {
         x[i] = i+1;
     }
+    for (int i = 0; i < 7; i++) {
+        printf("x[%d] = %d\n", i, x[i]);
+    }
     er_setup_policies(x);
+    for (int i = 0; i < 7; i++) {
+        printf("x[%d] = %d\n", i, x[i]);
+    }
 
+    int x2[7];
+    er_read_buf(x, &x2, 0, 7*sizeof(int));
+    for (int i = 0; i < 7; i++) {
+        printf("x[%d] = %d\n", i, x2[i]);
+    }
+
+    int x3[7];
+    for (int i = 0; i < 7; i++) {
+        x3[i] = i+10;
+    }
+    er_write_buf(x, &x3, 0, 7*sizeof(int));
+    for (int i = 0; i < 7; i++) {
+        printf("x[%d] = %d\n", i, x[i]);
+    }
 
     END_FUNC;
 

@@ -195,29 +195,6 @@ impl Policy {
         }
     }
 
-    fn encrypt_buffer(&self, buffer: &mut [u8]) -> u32 {
-        match self {
-            Policy::Encrypted => {
-                // encrypt buffer
-                // prepare to send to encrypt(data) and get iv+data
-                0
-            }
-            _ => 0,
-        }
-    }
-
-    fn decrypt_buffer(&self, buffer: &mut [u8]) -> u32 {
-        match self {
-            Policy::Encrypted => {
-                // decrypt buffer
-                // split up data and iv
-                // prepare to send to decrypt(data, iv)
-                0
-            }
-            _ => 0,
-        }
-    }
-
     /// Applies the policy on the given data. This assumes that the data in the data_slice is correct.
     /// This is used to setup the data and after write operations in order to secure the data from
     /// bitflips.
@@ -454,13 +431,44 @@ impl AllocBlock {
 
     fn encrypt_buffer(&mut self) -> u32 {
         let buffer = self.buffer();
-        // TODO: figure out if this is even necessary, 
-        // or if we can get away with only policy impl
+        let mut curr_policy;
+        for i in 0..MAX_POLICIES {
+            curr_policy = self.policies[i];
+            match curr_policy {
+                Policy::Encrypted => {
+                    let key = GenericArray::from_slice(KEY);
+                    // let random_bytes = rand::thread_rng().gen::<[u8; NONCE_LEN]>();
+                    // let nonce = GenericArray::from_slice(&random_bytes);
+                    let nonce = GenericArray::from_slice(NONCE);
+                    let mut cipher = Aes128Ctr::new(&key, &nonce);
+                    let (mut data, err) = curr_policy.split_buffer_mut(buffer); 
+                    cipher.apply_keystream(&mut data);
+                    err.copy_from_slice(NONCE);
+                    break
+                },
+                _ => continue
+            }
+        }
         0
     }
 
     fn decrypt_buffer(&mut self) -> u32 {
         let buffer = self.buffer();
+        let mut curr_policy;
+        for i in 0..MAX_POLICIES {
+            curr_policy = self.policies[i];
+            match curr_policy {
+                Policy::Encrypted => {
+                    let key = GenericArray::from_slice(KEY);
+                    let (mut ciphertext, _nonce) = curr_policy.split_buffer_mut(buffer); 
+                    let nonce = GenericArray::from_slice(&_nonce);
+                    let mut cipher = Aes128Ctr::new(&key, &nonce);
+                    cipher.apply_keystream(&mut ciphertext);
+                    break
+                },
+                _ => continue
+            }
+        }
         0
     }
 
