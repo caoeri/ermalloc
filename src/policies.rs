@@ -206,7 +206,7 @@ impl Policy {
                 }
                 let data_len = buffer.len() / (*n_copies as usize);
                 let (data, err) = self.split_buffer_mut(buffer);
-                for slice in err.chunks_exact_mut(data_len).skip(1) {
+                for slice in err.chunks_exact_mut(data_len) {
                     slice.copy_from_slice(data)
                 }
             }
@@ -429,9 +429,33 @@ impl AllocBlock {
             .decrypt_buffer()
     }
 
+    /// TODO: refactor encrypt and decrypt buffer
     fn encrypt_buffer(&mut self) -> u32 {
-        let buffer = self.buffer();
+        let mut buffer = self.buffer();
         let mut curr_policy;
+
+        for i in 0..MAX_POLICIES {
+            curr_policy = self.policies[i];
+            match curr_policy {
+                Policy::Redundancy(_n_copies) => {
+                    buffer = curr_policy.get_data_mut(buffer);
+                    break;
+                }
+                _ => continue
+            }
+        }
+
+        for i in 0..MAX_POLICIES {
+            curr_policy = self.policies[i];
+            match curr_policy {
+                Policy::ReedSolomon(_n_err) => {
+                    buffer = curr_policy.get_data_mut(buffer);
+                    break;
+                }
+                _ => continue
+            }
+        }
+
         for i in 0..MAX_POLICIES {
             curr_policy = self.policies[i];
             match curr_policy {
@@ -453,8 +477,31 @@ impl AllocBlock {
     }
 
     fn decrypt_buffer(&mut self) -> u32 {
-        let buffer = self.buffer();
+        let mut buffer = self.buffer();
         let mut curr_policy;
+
+        for i in 0..MAX_POLICIES {
+            curr_policy = self.policies[i];
+            match curr_policy {
+                Policy::Redundancy(_n_copies) => {
+                    buffer = curr_policy.get_data_mut(buffer);
+                    break;
+                }
+                _ => continue
+            }
+        }
+
+        for i in 0..MAX_POLICIES {
+            curr_policy = self.policies[i];
+            match curr_policy {
+                Policy::ReedSolomon(_n_err) => {
+                    buffer = curr_policy.get_data_mut(buffer);
+                    break;
+                }
+                _ => continue
+            }
+        }
+
         for i in 0..MAX_POLICIES {
             curr_policy = self.policies[i];
             match curr_policy {
@@ -486,7 +533,7 @@ impl AllocBlock {
         let corrected_bits = match index == MAX_POLICIES {
             true => return 0,
             false => match self.policies[index] {
-                Policy::Nil => return 0,
+                Policy::Nil | Policy::Encrypted => return 0,
                 Policy::Redundancy(n_copies) => {
                     if full_buffer.len() % (n_copies as usize) != 0 {
                         panic!("Redundancy: Size of buffer is not a multiple of the data size");
@@ -517,7 +564,7 @@ impl AllocBlock {
         let corrected_bits = match index == MAX_POLICIES {
             true => return false,
             false => match self.policies[index] {
-                Policy::Nil => return false,
+                Policy::Nil | Policy::Encrypted => return false,
                 _ => {
                     self.is_corrupted_helper(index + 1, self.policies[index].get_data(full_buffer))
                 }
