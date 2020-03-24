@@ -15,6 +15,7 @@ pub enum ErPolicyRaw {
     Nil,
     Redundancy,
     ReedSolomon,
+    Encrypted,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -111,6 +112,7 @@ impl From<ErPolicyListNonNull> for Policy {
                 }
                 Policy::ReedSolomon(num)
             },
+            ErPolicyRaw::Encrypted => Policy::Encrypted
         }
     }
 }
@@ -128,7 +130,7 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
             }
         }
         match raw.policy {
-            ErPolicyRaw::Nil => {
+            ErPolicyRaw::Nil | ErPolicyRaw::Encrypted => {
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
             },
             ErPolicyRaw::Redundancy | ErPolicyRaw::ReedSolomon => {
@@ -152,7 +154,7 @@ fn setup_policy_helper(size: size_t, policies: *const ErPolicyListRaw) -> Option
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
-        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("err");
+        let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("policy list generation error");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);
@@ -230,10 +232,17 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
     if c < 0 {
         return c;
     }
+    
+    let w_decrypted = AllocBlock::from_usr_ptr_mut(base as *mut u8);
+    AllocBlock::decrypt_buffer_ffi(w_decrypted);
+
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
     let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let dst_buf = slice::from_raw_parts_mut(dest as *mut u8, len);
     dst_buf.copy_from_slice(src_buf);
+
+    let w_recrypt = AllocBlock::from_usr_ptr_mut(base as *mut u8);
+    AllocBlock::encrypt_buffer_ffi(w_recrypt);
     c
 }
 
@@ -242,6 +251,12 @@ pub unsafe extern "C" fn er_write_buf(base: *mut c_void, src: *const c_void, off
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
     let dst_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
     let src_buf = slice::from_raw_parts_mut(src as *mut u8, len);
+
+    let w_decrypted = AllocBlock::from_usr_ptr_mut(base as *mut u8);
+    AllocBlock::decrypt_buffer_ffi(w_decrypted);
+
     dst_buf.copy_from_slice(src_buf);
+
+    er_setup_policies(base);
     0
 }

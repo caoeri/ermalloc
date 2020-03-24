@@ -9,7 +9,20 @@ use crate::weak::*;
 
 use reed_solomon::{Decoder, Encoder};
 
+use aes_ctr::Aes128Ctr;
+use aes_ctr::stream_cipher::generic_array::GenericArray;
+use aes_ctr::stream_cipher::{
+    NewStreamCipher, SyncStreamCipher
+};
+
 pub const MAX_POLICIES: usize = 3;
+
+// AES-CTR mode with 128 bit key and 128 bit nonce
+const KEY_LEN: usize = 16;
+const NONCE_LEN: usize = 16;
+static KEY: &'static [u8] = b"very secret key.";
+// TODO: use real rng to generate the nonce (hard to do without std)
+static NONCE: &'static [u8] = b"and secret nonce";
 
 #[repr(u64)]
 #[derive(Copy, Clone)]
@@ -18,6 +31,7 @@ pub enum Policy {
     // The u32 here represents the total number of copies including the original data
     Redundancy(u32),
     ReedSolomon(u32),
+    Encrypted,
     // Custom, // TODO: Make ths a function to arbitrary data
 }
 
@@ -73,6 +87,28 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
 }
 
 impl Policy {
+
+    fn is_red(&self) -> bool {
+        match self {
+            Policy::Redundancy(..) => true,
+            _ => false,
+        }
+    }
+
+    fn is_rs(&self) -> bool {
+        match self {
+            Policy::ReedSolomon(..) => true,
+            _ => false,
+        }
+    }
+
+    fn is_crypt(&self) -> bool {
+        match self {
+            Policy::Encrypted => true,
+            _ => false,
+        }
+    }
+
     /// From the buffer return (data, ecc)
     fn split_buffer_mut<'a>(&self, buffer: &'a mut [u8]) -> (&'a mut [u8], &'a mut [u8]) {
         let len = buffer.len();
@@ -89,6 +125,13 @@ impl Policy {
                     panic!("Reed-Solomon: The number of data bits plus the amount of error correction bits is too small");
                 }
                 let data_len = len - (*n_ecc as usize);
+                buffer.split_at_mut(data_len)
+            }
+            Policy::Encrypted => {
+                if len <= NONCE_LEN {
+                    panic!("Encryption: The number of ciphertext bits plus the number of nonce bits is too small");
+                }
+                let data_len = len - NONCE_LEN;
                 buffer.split_at_mut(data_len)
             }
             _ => buffer.split_at_mut(buffer.len() - 1),
@@ -112,13 +155,20 @@ impl Policy {
                 let data_len = len - (*n_ecc as usize);
                 buffer.split_at(data_len)
             }
+            Policy::Encrypted => {
+                if len <= NONCE_LEN {
+                    panic!("Encryption: The number of ciphertext bits plus the number of nonce bits is too small");
+                }
+                let data_len = len - NONCE_LEN;
+                buffer.split_at(data_len)
+            }
             _ => buffer.split_at(buffer.len() - 1),
         }
     }
 
     /// Determines if the slice is corrupted if the current policy was used to correct the data.
     fn is_corrupted(&self, buffer: &[u8]) -> bool {
-        let (data, ecc) = self.split_buffer(buffer);
+        let (data, _ecc) = self.split_buffer(buffer);
 
         match self {
             Policy::Redundancy(n_copies) => {
@@ -157,7 +207,11 @@ impl Policy {
             }
             Policy::ReedSolomon(correction_bits) => {
                 let dec = Decoder::new(*correction_bits as usize);
-                let (corrected, n_errors) = dec.correct_err_count(buffer, None).unwrap();
+                // If reed solomon is incapable of correcting, then let redundancy handle it
+                let (corrected, n_errors) = match dec.correct_err_count(buffer, None) {
+                    Ok(res) => res,
+                    Err(_e) => return 0,
+                };
                 let (data, ecc) = self.split_buffer_mut(buffer);
                 data.clone_from_slice(corrected.data());
                 ecc.clone_from_slice(corrected.ecc());
@@ -178,7 +232,7 @@ impl Policy {
                 }
                 let data_len = buffer.len() / (*n_copies as usize);
                 let (data, err) = self.split_buffer_mut(buffer);
-                for slice in err.chunks_exact_mut(data_len).skip(1) {
+                for slice in err.chunks_exact_mut(data_len) {
                     slice.copy_from_slice(data)
                 }
             }
@@ -187,6 +241,16 @@ impl Policy {
                 let (data, err) = self.split_buffer_mut(buffer);
                 let encoded = enc.encode(data);
                 err.copy_from_slice(encoded.ecc());
+            }
+            Policy::Encrypted => {
+                let key = GenericArray::from_slice(KEY);
+                // let random_bytes = rand::thread_rng().gen::<[u8; NONCE_LEN]>();
+                // let nonce = GenericArray::from_slice(&random_bytes);
+                let nonce = GenericArray::from_slice(NONCE);
+                let mut cipher = Aes128Ctr::new(&key, &nonce);
+                let (mut data, err) = self.split_buffer_mut(buffer); 
+                cipher.apply_keystream(&mut data);
+                err.copy_from_slice(NONCE);
             }
             _ => (),
         }
@@ -270,6 +334,10 @@ impl AllocBlock {
                     buffer_size *= usize::try_from(*num_copies).unwrap()
                 }
                 Policy::ReedSolomon(n_ecc) => buffer_size += usize::try_from(*n_ecc).unwrap(),
+                Policy::Encrypted => {
+                    // nonce and ciphertext are stored together
+                    buffer_size += NONCE_LEN
+                }
                 _ => (),
             }
         }
@@ -375,6 +443,79 @@ impl AllocBlock {
             .correct_buffer()
     }
 
+    pub fn encrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
+        w.get_ref_mut()
+            .expect("encrypt_buffer_ffi")
+            .encrypt_buffer()
+    }
+
+    pub fn decrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
+        w.get_ref_mut()
+            .expect("decrypt_buffer_ffi")
+            .decrypt_buffer()
+    }
+
+    /// TODO: refactor encrypt and decrypt buffer
+    fn encrypt_buffer(&mut self) {
+        let mut buffer = self.buffer();
+
+        match self.policies.iter().position(|&pol| pol.is_red()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
+            }
+            None => (),
+        }
+
+        match self.policies.iter().position(|&pol| pol.is_rs()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
+            }
+            None => (),
+        }
+
+        match self.policies.iter().position(|&pol| pol.is_crypt()) {
+            Some(idx) => {
+                let key = GenericArray::from_slice(KEY);
+                let nonce = GenericArray::from_slice(NONCE);
+                let mut cipher = Aes128Ctr::new(&key, &nonce);
+                let (mut data, err) = self.policies[idx].split_buffer_mut(buffer); 
+                cipher.apply_keystream(&mut data);
+                err.copy_from_slice(NONCE);
+            }
+            None => (),
+        }
+    }
+
+    fn decrypt_buffer(&mut self) {
+        let mut buffer = self.buffer();
+
+        match self.policies.iter().position(|&pol| pol.is_red()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
+            }
+            None => (),
+        }
+
+        match self.policies.iter().position(|&pol| pol.is_rs()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
+            }
+            None => (),
+        }
+
+        match self.policies.iter().position(|&pol| pol.is_crypt()) {
+            Some(idx) => {
+                let key = GenericArray::from_slice(KEY);
+                let (mut ciphertext, _nonce) = self.policies[idx].split_buffer_mut(buffer); 
+                let nonce = GenericArray::from_slice(&_nonce);
+                let mut cipher = Aes128Ctr::new(&key, &nonce);
+                cipher.apply_keystream(&mut ciphertext);
+            }
+            None => (),
+        }
+
+    }
+
     /// The public function used to correct the buffer from potential SEU events. This should be used before
     /// any read operations.
     fn correct_buffer(&mut self) -> u32 {
@@ -389,7 +530,7 @@ impl AllocBlock {
         let corrected_bits = match index == MAX_POLICIES {
             true => return 0,
             false => match self.policies[index] {
-                Policy::Nil => return 0,
+                Policy::Nil | Policy::Encrypted => return 0,
                 Policy::Redundancy(n_copies) => {
                     if full_buffer.len() % (n_copies as usize) != 0 {
                         panic!("Redundancy: Size of buffer is not a multiple of the data size");
@@ -420,7 +561,7 @@ impl AllocBlock {
         let corrected_bits = match index == MAX_POLICIES {
             true => return false,
             false => match self.policies[index] {
-                Policy::Nil => return false,
+                Policy::Nil | Policy::Encrypted => return false,
                 _ => {
                     self.is_corrupted_helper(index + 1, self.policies[index].get_data(full_buffer))
                 }

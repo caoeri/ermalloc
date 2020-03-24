@@ -4,7 +4,9 @@
 
 enum er_policy {
     Nil = 0,
-    Redundancy
+    Redundancy,
+    ReedSolomon, 
+    Encrypted
 };
 
 struct er_policy_list {

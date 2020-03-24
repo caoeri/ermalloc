@@ -9,11 +9,13 @@ edition = "2018"
 [dependencies]
 # For FFI
 libc = "0.2"
-cbindgen = "0.12.2"
+
 # Various Error correcting options
 
 # General
 lazy_static = "1.4.0"
+log = "0.4.8"
+aes-ctr = "0.3.0"
 
 # Encoding
 reed-solomon = "0.2.1"
