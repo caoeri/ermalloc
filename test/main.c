@@ -244,9 +244,6 @@ void combined_test(void) {
     }
     er_write_buf(x, &x4, 3*sizeof(int), 3*sizeof(int));
 
-    for (int i = 0; i < 7; i++) {
-        printf("x[%d] = %d\n", i, x[i]);
-    }
 
     int recv4[7];
     er_read_buf(x, &recv4, 0, len);
@@ -259,6 +256,54 @@ void combined_test(void) {
 
 }
 
+void resilience_test(void) {
+    START_FUNC;
+
+    struct er_policy_list p = {
+        .policy = Encrypted,
+        .policy_data = NULL,
+        .next_policy = NULL
+    };
+
+    struct er_policy_list p2 = {
+        .policy = ReedSolomon,
+        .policy_data = &(int){3},
+        .next_policy = &p
+    };
+
+    struct er_policy_list p3 = {
+        .policy = Redundancy,
+        .policy_data = &(int){3},
+        .next_policy = &p2
+    };
+
+    size_t len = 5;
+
+    char* og_data = "rise";
+
+    char* x = er_malloc(len, &p3);
+    er_write_buf(x, og_data, 0, len);
+
+    // Multiple bit flips within a chunk
+    // Need both FEC and Redundancy to correct
+    x[0] ^= 1 << 3;
+    x[2] ^= 1 << 2;
+    x[3] ^= 1 << 2;
+    x[3] ^= 1 << 3;
+    x[3] ^= 1 << 7;
+    
+    char recv[5];
+    int c = er_read_buf(x, &recv, 0, len);
+    printf("num corrected errors: %d\n", c);
+
+    // this will yield encrypted values
+    printf("recv: %s\n", recv);
+    for (int i = 0; i < len; i++) {
+        printf("recv[%d] = %c\n", i, recv[i]);
+    }
+
+}
+
 int main(void)
 {
     malloc_free_test();
@@ -267,5 +312,6 @@ int main(void)
     rs_and_redundant_test();
     encryption_test();
     combined_test();
+    resilience_test();
     return 0;
 }

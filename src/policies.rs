@@ -185,7 +185,11 @@ impl Policy {
             }
             Policy::ReedSolomon(correction_bits) => {
                 let dec = Decoder::new(*correction_bits as usize);
-                let (corrected, n_errors) = dec.correct_err_count(buffer, None).unwrap();
+                // If reed solomon is incapable of correcting, then let redundancy handle it
+                let (corrected, n_errors) = match dec.correct_err_count(buffer, None) {
+                    Ok(res) => res,
+                    Err(e) => return 0,
+                };
                 let (data, ecc) = self.split_buffer_mut(buffer);
                 data.clone_from_slice(corrected.data());
                 ecc.clone_from_slice(corrected.ecc());
