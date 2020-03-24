@@ -44,6 +44,7 @@ pub enum Policy {
 // Proper warnings for poor allocations
 // Cleaner interface for size propagation upwards (All hidden!)
 // Interface: is_corrupted (Done), apply (Done), correct (Done)
+// Set some dirty bit when recovered data is best effort (happens when ReedSol fails, and no redundancy specified)
 
 // Testing
 
@@ -196,6 +197,9 @@ impl Policy {
     ///
     /// Pre-conditions:
     /// - This is intended to be used after apply_policy has been done.
+    /// 
+    /// Note: Reed Solomon first attempt to correct, if there are too many errors for it to handle, then redundancy
+    /// should take care of it. If no redundancy, then this will lead to the incorrect buffer being returned to user.
     fn correct_buffer(&self, buffer: &mut [u8]) -> u32 {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -455,7 +459,6 @@ impl AllocBlock {
             .decrypt_buffer()
     }
 
-    /// TODO: refactor encrypt and decrypt buffer
     fn encrypt_buffer(&mut self) {
         let mut buffer = self.buffer();
 
@@ -518,6 +521,8 @@ impl AllocBlock {
 
     /// The public function used to correct the buffer from potential SEU events. This should be used before
     /// any read operations.
+    /// When correcting data, first Reed Solomon is used (ie a block is corrected). If RS fails, then 
+    /// Redundancy is used to take a vote of corresponding bits in each of the redundant blocks.
     fn correct_buffer(&mut self) -> u32 {
         let buffer = self.buffer();
         self.correct_bits_helper(0, buffer)
