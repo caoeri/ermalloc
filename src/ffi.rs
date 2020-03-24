@@ -234,7 +234,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
     }
     
     let w_decrypted = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let e = AllocBlock::decrypt_buffer_ffi(w_decrypted) as c_int;
+    AllocBlock::decrypt_buffer_ffi(w_decrypted);
 
     let w = AllocBlock::from_usr_ptr_mut(base as *mut u8);
     let src_buf = AllocBlock::data_slice_ffi(w).split_at_mut(offset).1.split_at_mut(len).0;
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn er_read_buf(base: *mut c_void, dest: *mut c_void, offse
     dst_buf.copy_from_slice(src_buf);
 
     let w_recrypt = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let f = AllocBlock::encrypt_buffer_ffi(w_recrypt) as c_int;
+    AllocBlock::encrypt_buffer_ffi(w_recrypt);
     c
 }
 
@@ -253,7 +253,7 @@ pub unsafe extern "C" fn er_write_buf(base: *mut c_void, src: *const c_void, off
     let src_buf = slice::from_raw_parts_mut(src as *mut u8, len);
 
     let w_decrypted = AllocBlock::from_usr_ptr_mut(base as *mut u8);
-    let e = AllocBlock::decrypt_buffer_ffi(w_decrypted) as c_int;
+    AllocBlock::decrypt_buffer_ffi(w_decrypted);
 
     dst_buf.copy_from_slice(src_buf);
 

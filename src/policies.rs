@@ -87,6 +87,28 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
 }
 
 impl Policy {
+
+    fn is_red(&self) -> bool {
+        match self {
+            Policy::Redundancy(..) => true,
+            _ => false,
+        }
+    }
+
+    fn is_rs(&self) -> bool {
+        match self {
+            Policy::ReedSolomon(..) => true,
+            _ => false,
+        }
+    }
+
+    fn is_crypt(&self) -> bool {
+        match self {
+            Policy::Encrypted => true,
+            _ => false,
+        }
+    }
+
     /// From the buffer return (data, ecc)
     fn split_buffer_mut<'a>(&self, buffer: &'a mut [u8]) -> (&'a mut [u8], &'a mut [u8]) {
         let len = buffer.len();
@@ -146,7 +168,7 @@ impl Policy {
 
     /// Determines if the slice is corrupted if the current policy was used to correct the data.
     fn is_corrupted(&self, buffer: &[u8]) -> bool {
-        let (data, ecc) = self.split_buffer(buffer);
+        let (data, _ecc) = self.split_buffer(buffer);
 
         match self {
             Policy::Redundancy(n_copies) => {
@@ -188,7 +210,7 @@ impl Policy {
                 // If reed solomon is incapable of correcting, then let redundancy handle it
                 let (corrected, n_errors) = match dec.correct_err_count(buffer, None) {
                     Ok(res) => res,
-                    Err(e) => return 0,
+                    Err(_e) => return 0,
                 };
                 let (data, ecc) = self.split_buffer_mut(buffer);
                 data.clone_from_slice(corrected.data());
@@ -421,106 +443,77 @@ impl AllocBlock {
             .correct_buffer()
     }
 
-    pub fn encrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
+    pub fn encrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
         w.get_ref_mut()
             .expect("encrypt_buffer_ffi")
             .encrypt_buffer()
     }
 
-    pub fn decrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) -> u32 {
+    pub fn decrypt_buffer_ffi<'a>(w: WeakMut<'a, AllocBlock>) {
         w.get_ref_mut()
             .expect("decrypt_buffer_ffi")
             .decrypt_buffer()
     }
 
     /// TODO: refactor encrypt and decrypt buffer
-    fn encrypt_buffer(&mut self) -> u32 {
+    fn encrypt_buffer(&mut self) {
         let mut buffer = self.buffer();
-        let mut curr_policy;
 
-        for i in 0..MAX_POLICIES {
-            curr_policy = self.policies[i];
-            match curr_policy {
-                Policy::Redundancy(_n_copies) => {
-                    buffer = curr_policy.get_data_mut(buffer);
-                    break;
-                }
-                _ => continue
+        match self.policies.iter().position(|&pol| pol.is_red()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
             }
+            None => (),
         }
 
-        for i in 0..MAX_POLICIES {
-            curr_policy = self.policies[i];
-            match curr_policy {
-                Policy::ReedSolomon(_n_err) => {
-                    buffer = curr_policy.get_data_mut(buffer);
-                    break;
-                }
-                _ => continue
+        match self.policies.iter().position(|&pol| pol.is_rs()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
             }
+            None => (),
         }
 
-        for i in 0..MAX_POLICIES {
-            curr_policy = self.policies[i];
-            match curr_policy {
-                Policy::Encrypted => {
-                    let key = GenericArray::from_slice(KEY);
-                    // let random_bytes = rand::thread_rng().gen::<[u8; NONCE_LEN]>();
-                    // let nonce = GenericArray::from_slice(&random_bytes);
-                    let nonce = GenericArray::from_slice(NONCE);
-                    let mut cipher = Aes128Ctr::new(&key, &nonce);
-                    let (mut data, err) = curr_policy.split_buffer_mut(buffer); 
-                    cipher.apply_keystream(&mut data);
-                    err.copy_from_slice(NONCE);
-                    break
-                },
-                _ => continue
+        match self.policies.iter().position(|&pol| pol.is_crypt()) {
+            Some(idx) => {
+                let key = GenericArray::from_slice(KEY);
+                let nonce = GenericArray::from_slice(NONCE);
+                let mut cipher = Aes128Ctr::new(&key, &nonce);
+                let (mut data, err) = self.policies[idx].split_buffer_mut(buffer); 
+                cipher.apply_keystream(&mut data);
+                err.copy_from_slice(NONCE);
             }
+            None => (),
         }
-        0
     }
 
-    fn decrypt_buffer(&mut self) -> u32 {
+    fn decrypt_buffer(&mut self) {
         let mut buffer = self.buffer();
-        let mut curr_policy;
 
-        for i in 0..MAX_POLICIES {
-            curr_policy = self.policies[i];
-            match curr_policy {
-                Policy::Redundancy(_n_copies) => {
-                    buffer = curr_policy.get_data_mut(buffer);
-                    break;
-                }
-                _ => continue
+        match self.policies.iter().position(|&pol| pol.is_red()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
             }
+            None => (),
         }
 
-        for i in 0..MAX_POLICIES {
-            curr_policy = self.policies[i];
-            match curr_policy {
-                Policy::ReedSolomon(_n_err) => {
-                    buffer = curr_policy.get_data_mut(buffer);
-                    break;
-                }
-                _ => continue
+        match self.policies.iter().position(|&pol| pol.is_rs()) {
+            Some(idx) => {
+                buffer = self.policies[idx].get_data_mut(buffer);
             }
+            None => (),
         }
 
-        for i in 0..MAX_POLICIES {
-            curr_policy = self.policies[i];
-            match curr_policy {
-                Policy::Encrypted => {
-                    let key = GenericArray::from_slice(KEY);
-                    let (mut ciphertext, _nonce) = curr_policy.split_buffer_mut(buffer); 
-                    let nonce = GenericArray::from_slice(&_nonce);
-                    let mut cipher = Aes128Ctr::new(&key, &nonce);
-                    cipher.apply_keystream(&mut ciphertext);
-                    break
-                },
-                _ => continue
+        match self.policies.iter().position(|&pol| pol.is_crypt()) {
+            Some(idx) => {
+                let key = GenericArray::from_slice(KEY);
+                let (mut ciphertext, _nonce) = self.policies[idx].split_buffer_mut(buffer); 
+                let nonce = GenericArray::from_slice(&_nonce);
+                let mut cipher = Aes128Ctr::new(&key, &nonce);
+                cipher.apply_keystream(&mut ciphertext);
             }
+            None => (),
         }
-        0
+
     }
 
     /// The public function used to correct the buffer from potential SEU events. This should be used before
