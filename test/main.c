@@ -259,6 +259,8 @@ void combined_test(void) {
 void resilience_test(void) {
     START_FUNC;
 
+    // This list of policies will need to be reordered 
+    // into Redundancy -> ReedSol -> Encrypted
     struct er_policy_list p = {
         .policy = Encrypted,
         .policy_data = NULL,
@@ -266,13 +268,13 @@ void resilience_test(void) {
     };
 
     struct er_policy_list p2 = {
-        .policy = ReedSolomon,
+        .policy = Redundancy,
         .policy_data = &(int){3},
         .next_policy = &p
     };
 
     struct er_policy_list p3 = {
-        .policy = Redundancy,
+        .policy = ReedSolomon,
         .policy_data = &(int){3},
         .next_policy = &p2
     };
@@ -296,12 +298,12 @@ void resilience_test(void) {
     int c = er_read_buf(x, &recv, 0, len);
     printf("num corrected errors: %d\n", c);
 
-    // this will yield encrypted values
     printf("recv: %s\n", recv);
     for (int i = 0; i < len; i++) {
         printf("recv[%d] = %c\n", i, recv[i]);
     }
 
+    END_FUNC;
 }
 
 int main(void)

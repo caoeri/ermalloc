@@ -153,19 +153,45 @@ fn setup_policy_helper(size: size_t, policies: *const ErPolicyListRaw) -> Option
     }
 
     let mut policy_arr = [Policy::Nil; MAX_POLICIES];
+    let mut policy_arr_ordered = [Policy::Nil; MAX_POLICIES];
     if policies != ptr::null() {
         let mut head = ErPolicyListNonNull::try_from(unsafe { *policies }).expect("policy list generation error");
         for i in 0.. {
             if i >= MAX_POLICIES {
                 panic!("{}", FfiError::MoreThanMaxPolicies);
             }
-            policy_arr[i] = Policy::from(head);
+            let pol = Policy::from(head);
+            match pol {
+                Policy::Redundancy(_) => {
+                    policy_arr[0] = pol;
+                }
+                Policy::ReedSolomon(_) => {
+                    policy_arr[1] = pol;
+                }
+                Policy::Encrypted => {
+                    policy_arr[2] = pol;
+                }
+                _ => (),
+            }
             head = match head.next() {
                 None => break,
                 Some(erplnn) => erplnn
             };
         }
+
+        // order the policies Redundancy -> ReedSol -> Encrypt
+        let mut idx = 0;
+        for pol in policy_arr.iter() {
+            match pol {
+                Policy::Nil => continue,
+                _ => {
+                    policy_arr_ordered[idx] = *pol;
+                    idx += 1
+                }
+            }
+        }
     }
+
     Some(policy_arr)
 }
 
