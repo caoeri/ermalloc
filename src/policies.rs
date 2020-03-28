@@ -9,11 +9,9 @@ use crate::weak::*;
 
 use reed_solomon::{Decoder, Encoder};
 
-use aes_ctr::Aes128Ctr;
 use aes_ctr::stream_cipher::generic_array::GenericArray;
-use aes_ctr::stream_cipher::{
-    NewStreamCipher, SyncStreamCipher
-};
+use aes_ctr::stream_cipher::{NewStreamCipher, SyncStreamCipher};
+use aes_ctr::Aes128Ctr;
 
 pub const MAX_POLICIES: usize = 3;
 
@@ -24,6 +22,7 @@ static KEY: &'static [u8] = b"very secret key.";
 // TODO: use real rng to generate the nonce (hard to do without std)
 static NONCE: &'static [u8] = b"and secret nonce";
 
+/// Policy comprised of some metadata about what operations are applied on the buffer.
 #[repr(u64)]
 #[derive(Copy, Clone)]
 pub enum Policy {
@@ -39,13 +38,10 @@ pub enum Policy {
 
 // TODO:
 // Cleaner API
-// Support Create (Done), Read (By default), Update (By default), Delete (Done)
-// Full alloc (Done), realloc, dealloc (Done)
 // Proper warnings for poor allocations
-// Cleaner interface for size propagation upwards (All hidden!)
-// Interface: is_corrupted (Done), apply (Done), correct (Done)
 // Set some dirty bit when recovered data is best effort (happens when ReedSol fails, and no redundancy specified)
-
+// Allow for application on preallocated buffer.
+// Special block for strings and other types that "grow" indefinitely.
 // Testing
 
 // TODO:
@@ -53,6 +49,24 @@ pub enum Policy {
 // Create definitions like buffer (data + ecc) and data
 // - correct (verify redundant bits assert no errors) & apply (create redundant bits)
 
+// DONE:
+// Support Create (Done), Read (By default), Update (By default), Delete (Done)
+// Full alloc (Done), realloc, dealloc (Done)
+// Cleaner interface for size propagation upwards (All hidden!)
+// Interface: is_corrupted (Done), apply (Done), correct (Done)
+
+
+
+/// Counts the number of bits that are incorrect in a given .
+///
+/// # Arguments
+///
+/// * `buffer` - A buffer of bytes. It should contain n_copies of the some data
+/// * `n_copies` - The number of copies of data in the buffer. `buffer.len()` should be evenly divisible by `n_copies`.
+/// * `index` - The index that we want to correct. This should be in [0, buffer.len() / n_copies)
+/// 
+/// # Notable
+/// If n_copies is even and there is no majority, then the bits are left untouched.
 fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u32 {
     let mut errors = 0;
     if buffer.len() % n_copies != 0 {
@@ -64,7 +78,7 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
     let mut corrected: u8 = 0;
     for bit in 0..8 {
         let mask = 1 << bit;
-        let mut count: [u32; 2] = [0, 0];
+        let mut count: [u32; 2] = [0, 0]; // Count the number of bits that are 0 or 1
 
         (0..n_copies)
             .map(|i| buffer[i * data_len + index])
@@ -73,7 +87,7 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
             });
 
         if count[0] < count[1] {
-            corrected |= 1 << bit;
+            corrected |= 1 << bit; // Add corrected bit to the "correct" byte
             errors += count[0];
         } else {
             errors += count[1];
@@ -88,7 +102,6 @@ fn correct_bits_redundant(buffer: &mut [u8], n_copies: usize, index: usize) -> u
 }
 
 impl Policy {
-
     fn is_red(&self) -> bool {
         match self {
             Policy::Redundancy(..) => true,
@@ -110,7 +123,8 @@ impl Policy {
         }
     }
 
-    /// From the buffer return (data, ecc)
+    /// From the buffer return (`data`, `ecc`). Both of these are
+    /// mutable slices and may be necessary to satisfy the borrow checker.
     fn split_buffer_mut<'a>(&self, buffer: &'a mut [u8]) -> (&'a mut [u8], &'a mut [u8]) {
         let len = buffer.len();
         match self {
@@ -139,6 +153,7 @@ impl Policy {
         }
     }
 
+    /// Same as the _mut version, but returns slices.
     fn split_buffer<'a>(&self, buffer: &'a [u8]) -> (&'a [u8], &'a [u8]) {
         let len = buffer.len();
         match self {
@@ -176,6 +191,8 @@ impl Policy {
                 let data_len = data.len();
                 for byte in 0..data_len {
                     let val = buffer[byte];
+
+                    // Is any byte inconsistent between copies
                     for copy in 1..*n_copies {
                         if val != buffer[(copy as usize) * data_len + byte] {
                             return true;
@@ -194,12 +211,16 @@ impl Policy {
 
     /// If any errors are present in the buffer, this will correct them and report the total number of errors.
     /// You should do this before read operations in order to potentially correct any bits that have been corrupted.
-    ///
-    /// Pre-conditions:
-    /// - This is intended to be used after apply_policy has been done.
     /// 
-    /// Note: Reed Solomon first attempt to correct, if there are too many errors for it to handle, then redundancy
-    /// should take care of it. If no redundancy, then this will lead to the incorrect buffer being returned to user.
+    /// # Pre-conditions and Notes
+    /// This is intended to be used after apply_policy has been done at least once
+    /// to the data buffer. `apply_policy` sets up the buffer. 
+    ///
+    /// Reed Solomon will first attempt to correct the buffer, if there are too many errors for it to handle,
+    /// then redundancy should take care of it. Without redundancy, an incorrect buffer can be returned to user.
+    /// 
+    /// # Arguments
+    /// * `buffer` - The buffer that the policy applies to
     fn correct_buffer(&self, buffer: &mut [u8]) -> u32 {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -225,9 +246,15 @@ impl Policy {
         }
     }
 
-    /// Applies the policy on the given data. This assumes that the data in the data_slice is correct.
-    /// This is used to setup the data and after write operations in order to secure the data from
-    /// bitflips.
+    /// Applies the policy on the given data. This is used after the initial setup of the data
+    /// or after write operations in order to secure the data from bitflips.
+    /// 
+    /// # Pre-conditions and Notes:
+    /// This assumes that the data in the data_slice is correct. This operation may not be
+    /// idempotent, so repeated calls can be dangerous (especially with encrypted data).
+    /// 
+    /// # Arguments
+    /// * `buffer` - The buffer that the policy applies to
     fn apply_policy(&self, buffer: &mut [u8]) {
         match self {
             Policy::Redundancy(n_copies) => {
@@ -252,7 +279,7 @@ impl Policy {
                 // let nonce = GenericArray::from_slice(&random_bytes);
                 let nonce = GenericArray::from_slice(NONCE);
                 let mut cipher = Aes128Ctr::new(&key, &nonce);
-                let (mut data, err) = self.split_buffer_mut(buffer); 
+                let (mut data, err) = self.split_buffer_mut(buffer);
                 cipher.apply_keystream(&mut data);
                 err.copy_from_slice(NONCE);
             }
@@ -260,15 +287,20 @@ impl Policy {
         }
     }
 
-    /// From the buffer containing the data plus the redundancy bits, this returns
-    /// a slice referring to just the data bits
+    /// A convenience method to just extract the data bits from the buffer
+    /// as a mutable slice
+    /// 
+    /// # Arguments
+    /// * `buffer` - The buffer that the policy applies to
     fn get_data_mut<'a>(&self, buffer: &'a mut [u8]) -> &'a mut [u8] {
         let (data, _) = self.split_buffer_mut(buffer);
         data
     }
 
-    /// From the buffer containing the data plus the redundancy bits, this returns
-    /// a slice referring to just the data bits
+    /// A convenience method to just extract the data bits from the buffer
+    /// 
+    /// # Arguments
+    /// * `buffer` - The buffer that the policy applies to
     fn get_data<'a>(&self, buffer: &'a [u8]) -> &'a [u8] {
         let (data, _) = self.split_buffer(buffer);
         data
@@ -277,9 +309,18 @@ impl Policy {
 
 /// Metadata that is adjacent to the actual data stored.
 ///
-/// Since each policy sees data as a combination of data and metadata (combined these for the Buffer/codeword),
-/// we recursively treat the the buffer as data for the next policy. This is similar to the how network packets
-/// gain data as you move up the OSI layers or you acn think of it like an onion gradually wrapping around the data.
+/// Each policy sees the allocated space as a combination of data and metadata
+/// (combined these form the Buffer/codeword). Following this, we organize the
+/// data in a method akin to network packets with the policies taking up the header
+/// space and the data being a combination of data and metadata. Notably, we decided
+/// to append the metadata to the data rather than prepend. This was done because
+/// protocols like CRC include the metadata at the end, which helps with performance
+/// for large amounts of data.
+/// 
+/// Example layout:
+/// ```
+/// [Reed-Solomon, Encryption] [[[data] encryption meta-data] error correction bits]
+/// ```
 #[repr(C)]
 pub struct AllocBlock {
     /// Policies to be applied to the data.
@@ -318,7 +359,7 @@ impl AllocBlock {
         w.get_ref().expect("ptr_ffi").ptr()
     }
 
-    /// Gets a pointer to the data bits
+    /// Gets a pointer to the start of the data bits.
     ///
     /// [AllocBlock Metadata | Data]
     fn ptr(&self) -> *mut u8 {
@@ -347,14 +388,24 @@ impl AllocBlock {
         }
         buffer_size
     }
-
+ 
+    /// Allocates a block of the data on the heap. Internally, this calls the system
+    /// allocator.
+    /// 
+    /// # Arguments
+    /// * `size` - The size of the data to be allocated. This is not the total allocated size, which
+    /// is larger to account for metadata that needs to be stored.
+    /// * `policies` - The policies to be applied to the data. These are listed in the reverse order
+    /// of how they will be applied to the data
+    /// * `zeroed` - Is the data zeroed on initialization
     pub fn new<'a>(
         size: usize,
         policies: &[Policy; MAX_POLICIES],
         zeroed: bool,
     ) -> WeakMut<'a, AllocBlock> {
         let buffer_size: usize = AllocBlock::size_of(size, policies);
-        let layout = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
+        let layout =
+            Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
 
         let block_ptr: *mut u8 = unsafe {
             if zeroed {
@@ -377,6 +428,15 @@ impl AllocBlock {
         WeakMut::from(block)
     }
 
+    /// Reallocates a block of the data on the heap like realloc. Internally, this calls the system
+    /// allocator.
+    /// 
+    /// # Arguments
+    /// * `w` - a reference to the AllocatedBlock
+    /// * `new_size` - The desired size of the data to be allocated. This is not the total allocated size, which
+    /// is larger to account for metadata that needs to be stored.
+    /// * `new_policies` - The policies to be applied to the data. These are listed in the reverse order
+    /// of how they will be applied to the data
     pub fn renew<'a>(
         w: WeakMut<'a, AllocBlock>,
         new_size: usize,
@@ -384,7 +444,8 @@ impl AllocBlock {
     ) -> WeakMut<'a, AllocBlock> {
         let new_buffer_size = AllocBlock::size_of(new_size, new_policies);
         let layout =
-            Layout::from_size_align(new_buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
+            Layout::from_size_align(new_buffer_size + core::mem::size_of::<AllocBlock>(), 16)
+                .unwrap();
 
         let new_block_ptr = unsafe { realloc(w.as_ptr() as *mut u8, layout, new_size) };
 
@@ -417,7 +478,8 @@ impl AllocBlock {
 
     fn drop_ref(&mut self) {
         let buffer_size: usize = AllocBlock::size_of(self.length, &self.policies);
-        let layout = Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
+        let layout =
+            Layout::from_size_align(buffer_size + core::mem::size_of::<AllocBlock>(), 16).unwrap();
 
         unsafe {
             let ptr: *mut u8 = transmute(self as *mut AllocBlock);
@@ -481,7 +543,7 @@ impl AllocBlock {
                 let key = GenericArray::from_slice(KEY);
                 let nonce = GenericArray::from_slice(NONCE);
                 let mut cipher = Aes128Ctr::new(&key, &nonce);
-                let (mut data, err) = self.policies[idx].split_buffer_mut(buffer); 
+                let (mut data, err) = self.policies[idx].split_buffer_mut(buffer);
                 cipher.apply_keystream(&mut data);
                 err.copy_from_slice(NONCE);
             }
@@ -509,19 +571,18 @@ impl AllocBlock {
         match self.policies.iter().position(|&pol| pol.is_crypt()) {
             Some(idx) => {
                 let key = GenericArray::from_slice(KEY);
-                let (mut ciphertext, _nonce) = self.policies[idx].split_buffer_mut(buffer); 
+                let (mut ciphertext, _nonce) = self.policies[idx].split_buffer_mut(buffer);
                 let nonce = GenericArray::from_slice(&_nonce);
                 let mut cipher = Aes128Ctr::new(&key, &nonce);
                 cipher.apply_keystream(&mut ciphertext);
             }
             None => (),
         }
-
     }
 
     /// The public function used to correct the buffer from potential SEU events. This should be used before
     /// any read operations.
-    /// When correcting data, first Reed Solomon is used (ie a block is corrected). If RS fails, then 
+    /// When correcting data, first Reed Solomon is used (ie a block is corrected). If RS fails, then
     /// Redundancy is used to take a vote of corresponding bits in each of the redundant blocks.
     fn correct_buffer(&mut self) -> u32 {
         let buffer = self.buffer();
@@ -555,8 +616,8 @@ impl AllocBlock {
         corrected_bits + self.policies[index].correct_buffer(full_buffer)
     }
 
-    /// Determines if the buffer is corrupted. When possible, use this function as opposed to correct_buffer since
-    /// this function is cheaper.
+    /// Determines if the buffer is corrupted. When possible, use this function as opposed to correct_buffer
+    /// since this function is cheaper.
     fn is_corrupted(&self) -> bool {
         let buffer = self.buffer();
         self.is_corrupted_helper(0, buffer)
