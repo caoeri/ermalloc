@@ -133,9 +133,25 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
             ErPolicyRaw::Nil | ErPolicyRaw::Encrypted => {
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
             },
-            ErPolicyRaw::Redundancy | ErPolicyRaw::ReedSolomon => {
+            ErPolicyRaw::Redundancy => {
                 if raw.policy_data.is_null() {
-                    Err(FfiError::PolicyDataWasNull)
+                    let policy_data = unsafe {
+                        default_redundancy()
+                    };
+                    Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
+                } else {
+                    let policy_data = unsafe {
+                        Some(ptr::NonNull::new_unchecked(raw.policy_data as *mut _))
+                    };
+                    Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
+                }
+            },
+            ErPolicyRaw::ReedSolomon => {
+                if raw.policy_data.is_null() {
+                    let policy_data = unsafe {
+                        default_rs()
+                    };
+                    Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
                 } else {
                     let policy_data = unsafe {
                         Some(ptr::NonNull::new_unchecked(raw.policy_data as *mut _))
@@ -145,6 +161,17 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
             }
         }
     }
+}
+
+// TODO: move to appropriate file once params are determined
+unsafe fn default_redundancy() -> Option<ptr::NonNull<c_void>> {
+    let data: *mut _ = &mut 3;
+    Some(ptr::NonNull::new_unchecked(data as *mut _))
+}
+
+unsafe fn default_rs() -> Option<ptr::NonNull<c_void>> {
+    let data: *mut _ = &mut 3;
+    Some(ptr::NonNull::new_unchecked(data as *mut _))
 }
 
 fn setup_policy_helper(size: size_t, policies: *const ErPolicyListRaw) -> Option<[Policy; MAX_POLICIES]> {
