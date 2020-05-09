@@ -97,18 +97,32 @@ impl From<ErPolicyListNonNull> for Policy {
         match raw.policy {
             ErPolicyRaw::Nil => Policy::Nil,
             ErPolicyRaw::Redundancy => {
-                let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
                 let num;
-                unsafe {
-                    num = *(ptr.as_ptr());
+                match raw.policy_data {
+                    Some(data) => {
+                        unsafe {
+                            let ptr = data.clone().cast::<u32>();
+                            num = *(ptr.as_ptr());
+                        } 
+                    },
+                    None => {
+                        num = default_redundancy();
+                    }
                 }
                 Policy::Redundancy(num)
             },
             ErPolicyRaw::ReedSolomon => {
-                let ptr = raw.policy_data.unwrap().clone().cast::<u32>();
                 let num;
-                unsafe {
-                    num = *(ptr.as_ptr());
+                match raw.policy_data {
+                    Some(data) => {
+                        unsafe {
+                            let ptr = data.clone().cast::<u32>();
+                            num = *(ptr.as_ptr());
+                        } 
+                    },
+                    None => {
+                        num = default_rs();
+                    }
                 }
                 Policy::ReedSolomon(num)
             },
@@ -133,9 +147,21 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
             ErPolicyRaw::Nil | ErPolicyRaw::Encrypted => {
                 Ok(ErPolicyListNonNull::new(raw.policy, None, next))
             },
-            ErPolicyRaw::Redundancy | ErPolicyRaw::ReedSolomon => {
+            ErPolicyRaw::Redundancy => {
                 if raw.policy_data.is_null() {
-                    Err(FfiError::PolicyDataWasNull)
+                    let policy_data = None;
+                    Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
+                } else {
+                    let policy_data = unsafe {
+                        Some(ptr::NonNull::new_unchecked(raw.policy_data as *mut _))
+                    };
+                    Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
+                }
+            },
+            ErPolicyRaw::ReedSolomon => {
+                if raw.policy_data.is_null() {
+                    let policy_data = None;
+                    Ok(ErPolicyListNonNull::new(raw.policy, policy_data, next))
                 } else {
                     let policy_data = unsafe {
                         Some(ptr::NonNull::new_unchecked(raw.policy_data as *mut _))
@@ -145,6 +171,16 @@ impl TryFrom<ErPolicyListRaw> for ErPolicyListNonNull {
             }
         }
     }
+}
+
+// TODO: move to appropriate file once params are determined
+// TODO: customize based on use case
+fn default_redundancy() -> u32 {
+    3
+}
+
+fn default_rs() -> u32 {
+    3
 }
 
 fn setup_policy_helper(size: size_t, policies: *const ErPolicyListRaw) -> Option<[Policy; MAX_POLICIES]> {
